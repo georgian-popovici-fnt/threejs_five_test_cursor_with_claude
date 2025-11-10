@@ -260,19 +260,26 @@ export class IfcViewerComponent {
         buffer,
         modelState.name,
         (progress) => {
-          this.currentModel.update((state) =>
-            state ? { ...state, progress } : state
-          );
+          // Run inside Angular zone to ensure change detection
+          this.ngZone.run(() => {
+            this.currentModel.update((state) =>
+              state ? { ...state, progress } : state
+            );
+          });
         }
       );
 
-      // Get the loaded model
+      // Get the loaded model (FragmentsModel)
       const model = this.fragmentsService.getModel(uuid);
       if (!model) {
         throw new Error('Failed to retrieve loaded model');
       }
 
+      console.log('Retrieved model from service:', model);
+      console.log('Model object:', model.object);
+
       // Add model to scene
+      // In v3.x, FragmentsModel has an 'object' property that is a THREE.Object3D
       this.scene.add(model.object);
 
       // Bind camera for culling
@@ -296,17 +303,24 @@ export class IfcViewerComponent {
       console.log(`IFC file loaded successfully: ${file.name}`);
     } catch (error) {
       console.error('Failed to load IFC file:', error);
-      this.currentModel.update((state) =>
-        state
-          ? {
-              ...state,
-              loading: false,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            }
-          : state
-      );
+      
+      // Run in Angular zone to ensure change detection
+      this.ngZone.run(() => {
+        this.currentModel.update((state) =>
+          state
+            ? {
+                ...state,
+                loading: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+              }
+            : state
+        );
+      });
     } finally {
-      this.isLoading.set(false);
+      // Ensure loading state is reset in Angular zone
+      this.ngZone.run(() => {
+        this.isLoading.set(false);
+      });
     }
   }
 

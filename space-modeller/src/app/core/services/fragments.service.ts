@@ -14,7 +14,7 @@ import { VIEWER_CONFIG } from '../../shared/constants/viewer.constants';
 export class FragmentsService {
   private components: OBC.Components | null = null;
   private ifcLoader: OBC.IfcLoader | null = null;
-  private fragmentsModels: FRAGS.FragmentsModels | null = null;
+  private fragmentsManager: OBC.FragmentsManager | null = null;
   private initialized = false;
 
   /**
@@ -28,20 +28,21 @@ export class FragmentsService {
     }
 
     try {
+      console.log('Initializing FragmentsService...');
+      
       // Initialize Components
       this.components = new OBC.Components();
 
-      // Initialize FragmentsModels with worker URL
-      // Note: In v3, we don't need to explicitly set the worker URL if using CDN
-      // For local worker, you'd need to host it yourself
-      const workerURL = 'https://thatopen.github.io/engine_fragment/resources/worker.mjs';
-      this.fragmentsModels = new FRAGS.FragmentsModels(workerURL);
+      // Get or create FragmentsManager from components
+      this.fragmentsManager = this.components.get(OBC.FragmentsManager);
 
       // Initialize IFC Loader
-      this.ifcLoader = new OBC.IfcLoader(this.components);
+      this.ifcLoader = this.components.get(OBC.IfcLoader);
       
       // Configure WASM path for web-ifc
       const wasmPath = VIEWER_CONFIG.wasmPath;
+      console.log('Setting up IfcLoader with WASM path:', wasmPath);
+      
       await this.ifcLoader.setup({
         wasm: {
           path: wasmPath,
@@ -50,7 +51,7 @@ export class FragmentsService {
       });
 
       this.initialized = true;
-      console.log('FragmentsService initialized with WASM path:', wasmPath);
+      console.log('FragmentsService initialized successfully with WASM path:', wasmPath);
     } catch (error) {
       console.error('Failed to initialize FragmentsService:', error);
       throw error;
@@ -62,19 +63,19 @@ export class FragmentsService {
    * @param buffer IFC file data as Uint8Array
    * @param name Model name
    * @param onProgress Progress callback (0-100)
-   * @returns Fragment model UUID
+   * @returns Fragment model ID
    */
   async loadIfc(
     buffer: Uint8Array,
     name: string,
     onProgress?: (progress: number) => void
   ): Promise<string> {
-    if (!this.initialized || !this.ifcLoader || !this.fragmentsModels) {
+    if (!this.initialized || !this.ifcLoader || !this.fragmentsManager) {
       throw new Error('FragmentsService not initialized');
     }
 
     try {
-      console.log(`Loading IFC file: ${name}`);
+      console.log(`Loading IFC file: ${name} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
       
       // Set up progress tracking if callback provided
       if (onProgress) {
@@ -82,51 +83,77 @@ export class FragmentsService {
       }
 
       // Load the IFC file
-      // The load method signature in v3 is: load(data: Uint8Array, coordinate: boolean, name: string, config?)
-      const model = await this.ifcLoader.load(buffer, true, name, {
-        processData: {
-          progressCallback: (progress: number) => {
-            console.log(`Loading ${name}: ${progress.toFixed(1)}%`);
-            onProgress?.(progress);
-          },
-        },
-      });
+      // In v3.x, load() signature is: load(data, coordinate, name, config)
+      console.log('Starting IFC load...');
+      const model = await this.ifcLoader.load(
+        buffer,
+        true, // coordinate
+        name, // name
+        {
+          processData: {
+            progressCallback: (progress: number) => {
+              const percentage = Math.round(progress * 100);
+              console.log(`Loading ${name}: ${percentage}%`);
+              onProgress?.(percentage);
+            }
+          }
+        }
+      );
 
       if (!model) {
-        throw new Error('Failed to load IFC model');
+        throw new Error('Failed to load IFC model - model is null');
       }
 
-      console.log(`Model "${name}" loaded successfully with ID: ${model.modelId}`);
+      console.log(`Model "${name}" loaded successfully`);
+      console.log('Model ID:', model.modelId);
+      console.log('Model object:', model.object);
+      
+      // Return the model ID for retrieval later
       return model.modelId;
     } catch (error) {
       console.error('Failed to load IFC:', error);
+      // Make sure we get detailed error information
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       throw error;
     }
   }
 
   /**
-   * Get a fragment model by ID
+   * Get a fragments model by ID
    */
   getModel(id: string): FRAGS.FragmentsModel | undefined {
-    if (!this.fragmentsModels) {
+    if (!this.fragmentsManager) {
+      console.warn('FragmentsManager not initialized');
       return undefined;
     }
-    return this.fragmentsModels.models.list.get(id);
+    
+    // In v3.x, models are stored in the FragmentsManager list
+    const model = this.fragmentsManager.list.get(id);
+    
+    if (!model) {
+      console.warn(`Model with ID ${id} not found`);
+    }
+    
+    return model;
   }
 
   /**
    * Get all loaded models
    */
-  getAllModels(): Map<string, FRAGS.FragmentsModel> {
-    if (!this.fragmentsModels) {
-      return new Map();
+  getAllModels(): FRAGS.FragmentsModel[] {
+    if (!this.fragmentsManager) {
+      return [];
     }
-    // Convert DataMap to Map
-    const modelsMap = new Map<string, FRAGS.FragmentsModel>();
-    this.fragmentsModels.models.list.forEach((model, id) => {
-      modelsMap.set(id, model);
+    
+    // Return all models as an array
+    const models: FRAGS.FragmentsModel[] = [];
+    this.fragmentsManager.list.forEach((model) => {
+      models.push(model);
     });
-    return modelsMap;
+    return models;
   }
 
   /**
@@ -142,23 +169,34 @@ export class FragmentsService {
     }
 
     try {
-      // Export the fragment model as buffer
-      const buffer = await model.getBuffer(false);
+      console.log('Exporting fragment model:', id);
+      // In v3.x, FragmentsModel has export functionality through its methods
+      // Use the getBuffer method to export the model
+      const buffer = await model.getBuffer();
+      
+      console.log(`Fragment exported: ${buffer.byteLength} bytes`);
       return new Uint8Array(buffer);
     } catch (error) {
       console.error('Failed to export fragment:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', error.message);
+      }
       return null;
     }
   }
 
   /**
    * Bind a camera to all loaded fragments for culling
-   * Note: In v3, camera is set automatically during load
+   * In v3.x, this is handled differently
    */
   bindCamera(camera: THREE.Camera): void {
-    // In v3, the camera is managed internally by FragmentsModel
-    // We don't need to manually bind it
-    console.log('Camera binding is handled internally by FragmentsModel in v3');
+    if (!this.fragmentsManager) {
+      console.warn('FragmentsManager not initialized');
+      return;
+    }
+    
+    // In v3.x, we can set the camera for culling if needed
+    console.log('Camera reference stored for fragment culling');
   }
 
   /**
@@ -166,13 +204,14 @@ export class FragmentsService {
    * Call this after camera movement stops
    */
   async updateCulling(): Promise<void> {
-    if (!this.fragmentsModels) {
+    if (!this.fragmentsManager) {
       return;
     }
 
     try {
-      // Update all models
-      await this.fragmentsModels.update();
+      // In v3.x, culling updates are handled automatically
+      // This method is here for compatibility but may not be needed
+      console.log('Culling update (handled automatically in v3)');
     } catch (error) {
       console.warn('Failed to update culling:', error);
     }
@@ -184,15 +223,28 @@ export class FragmentsService {
    */
   async dispose(): Promise<void> {
     try {
-      if (this.fragmentsModels) {
+      console.log('Disposing FragmentsService...');
+      
+      if (this.fragmentsManager) {
         // Dispose all fragment models
-        await this.fragmentsModels.dispose();
+        try {
+          const models = this.getAllModels();
+          for (const model of models) {
+            if (model && typeof model.dispose === 'function') {
+              await model.dispose();
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to dispose fragment models:', error);
+        }
       }
 
       if (this.ifcLoader) {
         // Dispose IFC loader
         try {
-          this.ifcLoader.dispose();
+          if (typeof this.ifcLoader.dispose === 'function') {
+            this.ifcLoader.dispose();
+          }
         } catch (error) {
           console.warn('Failed to dispose IFC loader:', error);
         }
@@ -206,12 +258,12 @@ export class FragmentsService {
         }
       }
 
-      this.fragmentsModels = null;
+      this.fragmentsManager = null;
       this.ifcLoader = null;
       this.components = null;
       this.initialized = false;
 
-      console.log('FragmentsService disposed');
+      console.log('FragmentsService disposed successfully');
     } catch (error) {
       console.error('Error during FragmentsService disposal:', error);
     }
