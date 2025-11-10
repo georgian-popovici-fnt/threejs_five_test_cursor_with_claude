@@ -1,0 +1,85 @@
+<div class="viewer-container">
+  <!-- 3D Canvas -->
+  <canvas 
+    #canvas 
+    class="viewer-canvas"
+    role="application"
+    aria-label="3D viewport for IFC model visualization"
+  ></canvas>
+
+  <!-- Toolbar -->
+  <div class="toolbar" role="toolbar" aria-label="Viewer controls">
+    <!-- File Input (hidden) -->
+    <input
+      #fileInput
+      type="file"
+      accept=".ifc"
+      (change)="onFileSelected($event)"
+      class="file-input"
+      aria-label="Select IFC file"
+    />
+
+    <!-- Import Button -->
+    <button
+      class="toolbar-button"
+      (click)="openFilePicker()"
+      [disabled]="isLoading()"
+      aria-label="Import IFC file"
+      title="Import IFC file"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      <span>Import IFC</span>
+    </button>
+
+    <!-- Export Button -->
+    <button
+      class="toolbar-button"
+      (click)="downloadFragment()"
+      [disabled]="!currentModel()?.fragmentUuid || isLoading()"
+      aria-label="Download as .frag"
+      title="Download as .frag"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      <span>Download .frag</span>
+    </button>
+
+    <!-- Model Info -->
+    @if (currentModel(); as model) {
+      <div class="model-info">
+        <span class="model-name">{{ model.name }}</span>
+        @if (model.loading) {
+          <span class="model-progress">{{ model.progress.toFixed(1) }}%</span>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Loading Overlay -->
+  @if (isLoading()) {
+    <div class="loading-overlay" role="status" aria-live="polite">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">
+        Loading IFC file...
+        @if (currentModel()?.progress; as progress) {
+          <span>{{ progress.toFixed(1) }}%</span>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- Error Message -->
+  @if (currentModel()?.error; as error) {
+    <div class="error-message" role="alert">
+      <strong>Error:</strong> {{ error }}
+    </div>
+  }
+</div>
+
