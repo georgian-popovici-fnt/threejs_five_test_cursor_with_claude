@@ -1,0 +1,38 @@
+{
+  "name": "ifc-viewer-thatopen-threejs",
+  "version": "1.0.0",
+  "description": "Production-ready 3D IFC viewer using Three.js and @thatopen/components",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "vite preview"
+  },
+  "keywords": [
+    "ifc",
+    "bim",
+    "3d",
+    "threejs",
+    "viewer",
+    "thatopen",
+    "web-ifc",
+    "fragments"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@thatopen/components": "^2.3.1",
+    "stats.js": "^0.17.0",
+    "three": "^0.170.0",
+    "web-ifc": "^0.0.57"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
