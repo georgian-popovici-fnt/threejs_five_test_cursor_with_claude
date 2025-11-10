@@ -23,10 +23,9 @@ export const VIEWER_CONFIG: ViewerConfig = {
 
 /**
  * Fragments worker URL
- * Hosted by ThatOpen for fragment processing
+ * Local worker served from public folder to avoid CORS issues
  */
-export const FRAGMENTS_WORKER_URL = 
-  'https://thatopen.github.io/engine_fragment/resources/worker.mjs';
+export const FRAGMENTS_WORKER_URL = '/worker.mjs';
 
 /**
  * Three.js renderer configuration

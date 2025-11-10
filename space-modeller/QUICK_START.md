@@ -226,9 +226,20 @@ npm test
 ## 📝 Notes
 
 - **WASM Setup**: Runs automatically before `start` and `build`
-- **Worker URL**: Hosted by ThatOpen for fragment processing
+- **Worker URL**: Served locally from `/worker.mjs` to avoid CORS issues
 - **Version**: Using @thatopen v3.2 (latest stable)
 - **Browser Support**: Modern browsers with WebGL 2.0 support
+
+### CORS Fix for FragmentsManager
+
+The worker script (`worker.mjs`) is downloaded and served locally to avoid CORS errors. The file is located in:
+- Development: `public/worker.mjs`
+- Production: `dist/space-modeller/browser/worker.mjs`
+
+If you need to update the worker, download the latest version:
+```bash
+curl -o public/worker.mjs https://thatopen.github.io/engine_fragment/resources/worker.mjs
+```
 
 ## 💡 Next Steps
 

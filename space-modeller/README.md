@@ -87,6 +87,9 @@ export const VIEWER_CONFIG: ViewerConfig = {
   showGrid: true,
   showStats: true,
 };
+
+// Worker URL for FragmentsManager (served locally to avoid CORS issues)
+export const FRAGMENTS_WORKER_URL = '/worker.mjs';
 ```
 
 ## 📋 How to Use the Viewer

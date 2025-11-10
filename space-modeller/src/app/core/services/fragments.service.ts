@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import * as THREE from 'three';
 import * as OBC from '@thatopen/components';
 import * as FRAGS from '@thatopen/fragments';
-import { VIEWER_CONFIG } from '../../shared/constants/viewer.constants';
+import { VIEWER_CONFIG, FRAGMENTS_WORKER_URL } from '../../shared/constants/viewer.constants';
 
 /**
  * Service for managing ThatOpen Components and Fragments
@@ -35,6 +35,11 @@ export class FragmentsService {
 
       // Get or create FragmentsManager from components
       this.fragmentsManager = this.components.get(OBC.FragmentsManager);
+      
+      // Initialize FragmentsManager with local worker URL (fixes CORS issue)
+      // This must be called before loading any IFC files
+      this.fragmentsManager.init(FRAGMENTS_WORKER_URL);
+      console.log('FragmentsManager initialized with worker URL:', FRAGMENTS_WORKER_URL);
 
       // Initialize IFC Loader
       this.ifcLoader = this.components.get(OBC.IfcLoader);
