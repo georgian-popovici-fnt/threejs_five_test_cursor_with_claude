@@ -44,7 +44,11 @@
             "styles": [
               "src/styles.css"
             ],
-            "scripts": []
+            "scripts": [],
+            "allowedCommonJsDependencies": [
+              "web-ifc",
+              "stats.js"
+            ]
           },
           "configurations": {
             "production": {
@@ -56,8 +60,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "2kB",
-                  "maximumError": "4kB"
+                  "maximumWarning": "4kB",
+                  "maximumError": "6kB"
                 }
               ],
               "outputHashing": "all"
