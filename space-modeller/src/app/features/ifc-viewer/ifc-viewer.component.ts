@@ -280,9 +280,18 @@ export class IfcViewerComponent {
       console.log('Model type:', model.constructor.name);
       console.log('Model object:', model.object);
 
+      // DIAGNOSTIC: Detailed model inspection
+      this.inspectModelStructure(model.object);
+
       // Add model to scene
       // In v3.x, FragmentsModel has an 'object' property that is a THREE.Object3D
       this.scene.add(model.object);
+
+      // FIX: Ensure all materials in the model are visible and properly configured
+      this.fixModelMaterials(model.object);
+
+      // DIAGNOSTIC: Add visual helpers
+      this.addModelHelpers(model.object);
 
       // Bind camera for culling
       this.fragmentsService.bindCamera(this.camera);
@@ -326,6 +335,185 @@ export class IfcViewerComponent {
         this.isLoading.set(false);
       });
     }
+  }
+
+  /**
+   * DIAGNOSTIC: Inspect the structure of the loaded model
+   */
+  private inspectModelStructure(modelObject: THREE.Object3D): void {
+    console.group('🔍 Model Structure Inspection');
+    
+    console.log('Model Object:', modelObject);
+    console.log('Type:', modelObject.type);
+    console.log('Name:', modelObject.name);
+    console.log('Children count:', modelObject.children.length);
+    console.log('Visible:', modelObject.visible);
+    console.log('Position:', modelObject.position);
+    console.log('Rotation:', modelObject.rotation);
+    console.log('Scale:', modelObject.scale);
+
+    // Count different types of objects
+    let meshCount = 0;
+    let lineCount = 0;
+    let pointCount = 0;
+    let groupCount = 0;
+    let totalVertices = 0;
+    let totalFaces = 0;
+
+    modelObject.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        meshCount++;
+        if (child.geometry) {
+          const posAttr = child.geometry.getAttribute('position');
+          if (posAttr) {
+            totalVertices += posAttr.count;
+          }
+          if (child.geometry.index) {
+            totalFaces += child.geometry.index.count / 3;
+          }
+        }
+        
+        // Log first few meshes with details
+        if (meshCount <= 3) {
+          console.log(`Mesh ${meshCount}:`, {
+            name: child.name,
+            visible: child.visible,
+            geometry: child.geometry,
+            material: child.material,
+            position: child.position,
+            hasGeometry: !!child.geometry,
+            geometryType: child.geometry?.type,
+            vertexCount: child.geometry?.getAttribute('position')?.count || 0,
+          });
+        }
+      } else if (child instanceof THREE.Line) {
+        lineCount++;
+      } else if (child instanceof THREE.Points) {
+        pointCount++;
+      } else if (child instanceof THREE.Group) {
+        groupCount++;
+      }
+    });
+
+    console.log('Statistics:', {
+      meshes: meshCount,
+      lines: lineCount,
+      points: pointCount,
+      groups: groupCount,
+      totalVertices,
+      totalFaces: Math.floor(totalFaces),
+    });
+
+    // Calculate bounding box
+    const bbox = new THREE.Box3().setFromObject(modelObject);
+    const size = bbox.getSize(new THREE.Vector3());
+    const center = bbox.getCenter(new THREE.Vector3());
+    
+    console.log('Bounding Box:', {
+      min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z },
+      max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z },
+      size: { x: size.x, y: size.y, z: size.z },
+      center: { x: center.x, y: center.y, z: center.z },
+    });
+
+    console.groupEnd();
+  }
+
+  /**
+   * FIX: Fix material visibility issues
+   * Ensures all materials are properly configured for rendering
+   */
+  private fixModelMaterials(modelObject: THREE.Object3D): void {
+    console.group('🔧 Fixing Model Materials');
+    
+    let materialsFixed = 0;
+
+    modelObject.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        
+        materials.forEach((material) => {
+          if (material) {
+            // Store original state for logging
+            const wasVisible = material.visible;
+            const originalSide = material.side;
+            const hadOpacity = material.opacity;
+
+            // Fix common material issues
+            material.visible = true;
+            material.side = THREE.DoubleSide; // Render both sides
+            material.needsUpdate = true;
+
+            // Ensure opacity is set correctly
+            if (material.transparent && material.opacity === 0) {
+              material.opacity = 1.0;
+              material.transparent = false;
+            }
+
+            // For MeshStandardMaterial or MeshPhysicalMaterial, ensure proper lighting response
+            if ('metalness' in material) {
+              // If metalness and roughness are both 0, object might appear black
+              if (material.metalness === 0 && material.roughness === 0) {
+                material.roughness = 0.5;
+              }
+            }
+
+            // Ensure the material has a color (avoid pure black unless intentional)
+            if ('color' in material && material.color) {
+              const color = material.color as THREE.Color;
+              // If color is too dark, lighten it slightly
+              if (color.r < 0.1 && color.g < 0.1 && color.b < 0.1) {
+                console.log('Dark material detected, lightening:', color);
+                color.setRGB(0.7, 0.7, 0.7);
+              }
+            }
+
+            if (!wasVisible || originalSide !== THREE.DoubleSide || hadOpacity === 0) {
+              materialsFixed++;
+              console.log('Fixed material:', {
+                type: material.type,
+                wasVisible,
+                originalSide,
+                hadOpacity,
+                newSide: THREE.DoubleSide,
+              });
+            }
+          }
+        });
+
+        // Ensure the mesh itself is visible
+        child.visible = true;
+        child.frustumCulled = true; // Enable frustum culling for performance
+      }
+    });
+
+    console.log(`✓ Fixed ${materialsFixed} materials`);
+    console.groupEnd();
+  }
+
+  /**
+   * DIAGNOSTIC: Add visual helpers to understand model bounds and orientation
+   */
+  private addModelHelpers(modelObject: THREE.Object3D): void {
+    console.log('Adding visual helpers for model');
+
+    // Add bounding box helper
+    const bbox = new THREE.Box3().setFromObject(modelObject);
+    const boxHelper = new THREE.Box3Helper(bbox, new THREE.Color(0x00ff00));
+    boxHelper.name = 'BoundingBoxHelper';
+    this.scene.add(boxHelper);
+
+    // Add axes helper at model center
+    const center = bbox.getCenter(new THREE.Vector3());
+    const size = bbox.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    
+    const axesHelper = new THREE.AxesHelper(maxDim * 0.5);
+    axesHelper.position.copy(center);
+    axesHelper.name = 'AxesHelper';
+    this.scene.add(axesHelper);
+
+    console.log('✓ Added bounding box helper (green) and axes helper at model center');
   }
 
   /**

@@ -129,9 +129,7 @@ export class FragmentsService {
       }
       
       // Set up progress tracking if callback provided
-      if (onProgress) {
-        onProgress(0);
-      }
+      onProgress?.(0);
 
       // Load the IFC file
       // In ThatOpen Components v3.x, the load method signature is:
@@ -151,16 +149,19 @@ export class FragmentsService {
         throw new Error('Failed to load IFC model - model is null');
       }
 
+      // Ensure model has a valid ID
+      if (!model.modelId) {
+        throw new Error('Loaded model has no modelId');
+      }
+
       console.log(`Model "${name}" loaded successfully`);
       console.log('Model type:', model.constructor.name);
       console.log('Model ID:', model.modelId);
       console.log('Model object:', model.object);
-      console.log('Model has', model.object.children.length, 'children');
+      console.log('Model has', model.object?.children?.length || 0, 'children');
       
       // Report 100% progress (we only get start and end, no intermediate updates)
-      if (onProgress) {
-        onProgress(100);
-      }
+      onProgress?.(100);
       
       // Return the model ID for retrieval later
       return model.modelId;

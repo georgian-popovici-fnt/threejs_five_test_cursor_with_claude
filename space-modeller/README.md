@@ -248,10 +248,38 @@ This project follows strict Angular and Three.js conventions:
 
 **Problem**: Model loads but nothing appears
 
-**Solution**:
-- Check browser console for errors
-- Verify IFC file is valid
-- Try different IFC files to isolate the issue
+**Solution** (FIXED in latest version):
+
+The viewer now includes automatic fixes and diagnostics:
+
+1. **Automatic Material Fixes**: Materials are automatically configured for visibility
+   - Forces `material.visible = true`
+   - Sets `material.side = THREE.DoubleSide` (renders both faces)
+   - Fixes transparent materials with 0 opacity
+   - Adjusts very dark materials that blend into background
+   - Fixes PBR parameters (metalness/roughness)
+
+2. **Visual Helpers**: After loading, you'll see:
+   - Green wireframe box showing model bounds
+   - RGB axes helper at model center (Red=X, Green=Y, Blue=Z)
+
+3. **Diagnostic Logging**: Check browser console for detailed info:
+   ```
+   🔍 Model Structure Inspection
+     - Mesh count, vertex count, face count
+     - Bounding box dimensions and position
+   🔧 Fixing Model Materials
+     - Number of materials fixed
+   ```
+
+4. **If still not visible**:
+   - Open browser console (F12)
+   - Look for the diagnostic output after loading
+   - If `meshes: 0` → IFC file has no geometry
+   - If bounding box is extremely large/small → scale issue
+   - If you see green box but no model → check material logs
+
+See `IFC_RENDERING_FIXES.md` for detailed troubleshooting guide.
 
 ## 📄 License
 
