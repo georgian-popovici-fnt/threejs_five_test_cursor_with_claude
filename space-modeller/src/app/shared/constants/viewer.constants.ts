@@ -24,8 +24,9 @@ export const VIEWER_CONFIG: ViewerConfig = {
 /**
  * Fragments worker URL
  * Local worker served from public folder to avoid CORS issues
+ * Must be an absolute URL for proper loading
  */
-export const FRAGMENTS_WORKER_URL = '/worker.mjs';
+export const FRAGMENTS_WORKER_URL = `${window.location.origin}/worker.mjs`;
 
 /**
  * Three.js renderer configuration

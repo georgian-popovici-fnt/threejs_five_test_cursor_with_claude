@@ -32,23 +32,58 @@ export class FragmentsService {
       
       // Initialize Components
       this.components = new OBC.Components();
+      console.log('Components created');
 
-      // Get or create FragmentsManager from components
+      // Get FragmentsManager from components
       this.fragmentsManager = this.components.get(OBC.FragmentsManager);
-      
-      // Initialize FragmentsManager with local worker URL (fixes CORS issue)
-      // This must be called before loading any IFC files
-      this.fragmentsManager.init(FRAGMENTS_WORKER_URL);
-      console.log('FragmentsManager initialized with worker URL:', FRAGMENTS_WORKER_URL);
+      console.log('FragmentsManager obtained from components');
+
+      // Initialize FragmentsManager with worker URL
+      // This MUST be called before loading any IFC files
+      try {
+        console.log('Initializing FragmentsManager with worker URL:', FRAGMENTS_WORKER_URL);
+        console.log('Worker URL type:', typeof FRAGMENTS_WORKER_URL);
+        console.log('Worker URL value:', FRAGMENTS_WORKER_URL);
+        
+        // Check if worker file is accessible
+        try {
+          const workerCheck = await fetch(FRAGMENTS_WORKER_URL, { method: 'HEAD' });
+          console.log('Worker file accessible:', workerCheck.ok, 'Status:', workerCheck.status);
+          if (!workerCheck.ok) {
+            throw new Error(`Worker file not accessible at ${FRAGMENTS_WORKER_URL}. Status: ${workerCheck.status}`);
+          }
+        } catch (fetchError) {
+          console.error('Failed to verify worker file:', fetchError);
+          throw new Error(`Cannot access worker file at ${FRAGMENTS_WORKER_URL}: ${fetchError}`);
+        }
+        
+        this.fragmentsManager.init(FRAGMENTS_WORKER_URL);
+        console.log('init() call completed');
+        
+        // Verify FragmentsManager is initialized immediately after init()
+        console.log('FragmentsManager.initialized:', this.fragmentsManager.initialized);
+        
+        if (!this.fragmentsManager.initialized) {
+          throw new Error('FragmentsManager.init() did not set the initialized flag. Worker may have failed to load.');
+        }
+        
+        console.log('FragmentsManager core:', this.fragmentsManager.core);
+        console.log('FragmentsManager core.models:', this.fragmentsManager.core.models);
+      } catch (error) {
+        console.error('Error during FragmentsManager initialization:', error);
+        throw new Error(`Failed to initialize FragmentsManager: ${error instanceof Error ? error.message : String(error)}`);
+      }
 
       // Initialize IFC Loader
       this.ifcLoader = this.components.get(OBC.IfcLoader);
+      console.log('IfcLoader obtained from components');
       
       // Configure WASM path for web-ifc
       const wasmPath = VIEWER_CONFIG.wasmPath;
       console.log('Setting up IfcLoader with WASM path:', wasmPath);
       
       await this.ifcLoader.setup({
+        autoSetWasm: false, // CRITICAL: Disable auto WASM fetching from CDN
         wasm: {
           path: wasmPath,
           absolute: wasmPath.startsWith('http'),
@@ -56,7 +91,7 @@ export class FragmentsService {
       });
 
       this.initialized = true;
-      console.log('FragmentsService initialized successfully with WASM path:', wasmPath);
+      console.log('FragmentsService initialized successfully');
     } catch (error) {
       console.error('Failed to initialize FragmentsService:', error);
       throw error;
@@ -80,7 +115,18 @@ export class FragmentsService {
     }
 
     try {
-      console.log(`Loading IFC file: ${name} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+      console.log(`Starting IFC load for: ${name}`);
+      console.log(`Buffer size: ${buffer.length} bytes`);
+      
+      // Double-check that FragmentsManager is still initialized
+      if (!this.fragmentsManager) {
+        throw new Error('FragmentsManager is null');
+      }
+      console.log('Pre-load FragmentsManager.initialized:', this.fragmentsManager.initialized);
+      
+      if (!this.fragmentsManager.initialized) {
+        throw new Error('FragmentsManager is not initialized before load(). This should not happen.');
+      }
       
       // Set up progress tracking if callback provided
       if (onProgress) {
@@ -88,21 +134,17 @@ export class FragmentsService {
       }
 
       // Load the IFC file
-      // In v3.x, load() signature is: load(data, coordinate, name, config)
-      console.log('Starting IFC load...');
+      // In ThatOpen Components v3.x, the load method signature is:
+      // load(data: Uint8Array, coordinate: boolean, name: string, config?: {...})
+      console.log('Calling ifcLoader.load()...');
+      
+      // Note: Progress callbacks are disabled for now due to internal library issues
+      // The library will still load the file, just without progress updates
       const model = await this.ifcLoader.load(
         buffer,
         true, // coordinate
-        name, // name
-        {
-          processData: {
-            progressCallback: (progress: number) => {
-              const percentage = Math.round(progress * 100);
-              console.log(`Loading ${name}: ${percentage}%`);
-              onProgress?.(percentage);
-            }
-          }
-        }
+        name // name
+        // config is omitted - passing undefined or empty config causes issues
       );
 
       if (!model) {
@@ -110,17 +152,24 @@ export class FragmentsService {
       }
 
       console.log(`Model "${name}" loaded successfully`);
+      console.log('Model type:', model.constructor.name);
       console.log('Model ID:', model.modelId);
       console.log('Model object:', model.object);
+      console.log('Model has', model.object.children.length, 'children');
+      
+      // Report 100% progress (we only get start and end, no intermediate updates)
+      if (onProgress) {
+        onProgress(100);
+      }
       
       // Return the model ID for retrieval later
       return model.modelId;
     } catch (error) {
-      console.error('Failed to load IFC:', error);
+      console.error('Failed to load IFC file:', error);
       // Make sure we get detailed error information
       if (error instanceof Error) {
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
+        console.error('Error details:', error.message);
+        console.error('Stack trace:', error.stack);
       }
       throw error;
     }
@@ -135,25 +184,26 @@ export class FragmentsService {
       return undefined;
     }
     
-    // In v3.x, models are stored in the FragmentsManager list
+    // In v3.x, FragmentsModels are stored in the FragmentsManager list
     const model = this.fragmentsManager.list.get(id);
     
     if (!model) {
       console.warn(`Model with ID ${id} not found`);
+      console.log('Available models:', Array.from(this.fragmentsManager.list.keys()));
     }
     
     return model;
   }
 
   /**
-   * Get all loaded models
+   * Get all loaded fragment models
    */
   getAllModels(): FRAGS.FragmentsModel[] {
     if (!this.fragmentsManager) {
       return [];
     }
     
-    // Return all models as an array
+    // Return all fragment models as an array
     const models: FRAGS.FragmentsModel[] = [];
     this.fragmentsManager.list.forEach((model) => {
       models.push(model);
@@ -162,7 +212,7 @@ export class FragmentsService {
   }
 
   /**
-   * Export a model as .frag file
+   * Export a fragments model as binary data
    * @param id Model ID
    * @returns Buffer containing fragment data
    */
@@ -175,8 +225,8 @@ export class FragmentsService {
 
     try {
       console.log('Exporting fragment model:', id);
-      // In v3.x, FragmentsModel has export functionality through its methods
-      // Use the getBuffer method to export the model
+      
+      // In v3.x, FragmentsModel has a getBuffer method
       const buffer = await model.getBuffer();
       
       console.log(`Fragment exported: ${buffer.byteLength} bytes`);

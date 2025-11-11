@@ -255,19 +255,20 @@ export class IfcViewerComponent {
 
       console.log(`Loading IFC file: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
-      // Load IFC with progress tracking
+      // Load IFC without progress tracking (due to ThatOpen Components library limitations)
+      // Progress will jump from 0% to 100% when complete
       const uuid = await this.fragmentsService.loadIfc(
         buffer,
-        modelState.name,
-        (progress) => {
-          // Run inside Angular zone to ensure change detection
-          this.ngZone.run(() => {
-            this.currentModel.update((state) =>
-              state ? { ...state, progress } : state
-            );
-          });
-        }
+        modelState.name
+        // Progress callback omitted due to internal library issues with callbacks
       );
+
+      // Update progress to 100% in Angular zone
+      this.ngZone.run(() => {
+        this.currentModel.update((state) =>
+          state ? { ...state, progress: 100 } : state
+        );
+      });
 
       // Get the loaded model (FragmentsModel)
       const model = this.fragmentsService.getModel(uuid);
@@ -275,7 +276,8 @@ export class IfcViewerComponent {
         throw new Error('Failed to retrieve loaded model');
       }
 
-      console.log('Retrieved model from service:', model);
+      console.log('Retrieved FragmentsModel from service:', model);
+      console.log('Model type:', model.constructor.name);
       console.log('Model object:', model.object);
 
       // Add model to scene
@@ -288,17 +290,19 @@ export class IfcViewerComponent {
       // Center camera on model
       this.centerCameraOnModel(model.object);
 
-      // Update model state
-      this.currentModel.update((state) =>
-        state
-          ? {
-              ...state,
-              loading: false,
-              progress: 100,
-              fragmentUuid: uuid,
-            }
-          : state
-      );
+      // Update model state - mark as fully loaded
+      this.ngZone.run(() => {
+        this.currentModel.update((state) =>
+          state
+            ? {
+                ...state,
+                loading: false,
+                progress: 100,
+                fragmentUuid: uuid,
+              }
+            : state
+        );
+      });
 
       console.log(`IFC file loaded successfully: ${file.name}`);
     } catch (error) {
