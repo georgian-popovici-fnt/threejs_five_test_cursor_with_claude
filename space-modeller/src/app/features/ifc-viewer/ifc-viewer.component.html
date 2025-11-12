@@ -7,60 +7,121 @@
     aria-label="3D viewport for IFC model visualization"
   ></canvas>
 
-  <!-- Toolbar -->
-  <div class="toolbar" role="toolbar" aria-label="Viewer controls">
-    <!-- File Input (hidden) -->
-    <input
-      #fileInput
-      type="file"
-      accept=".ifc"
-      (change)="onFileSelected($event)"
-      class="file-input"
-      aria-label="Select IFC file"
-    />
+  <!-- Left Sidebar -->
+  <aside 
+    class="sidebar" 
+    [class.collapsed]="isSidebarCollapsed()"
+    role="complementary"
+    aria-label="Viewer controls sidebar"
+  >
+    <!-- Sidebar Header -->
+    <div class="sidebar-header">
+      @if (!isSidebarCollapsed()) {
+        <h2 class="sidebar-title">Controls</h2>
+      }
+      <button
+        class="sidebar-toggle"
+        (click)="toggleSidebar()"
+        [attr.aria-label]="isSidebarCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+        [title]="isSidebarCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+      >
+        <svg 
+          xmlns="http://www.w3.org/2000/svg" 
+          width="20" 
+          height="20" 
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="currentColor" 
+          stroke-width="2" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"
+          [class.rotate]="isSidebarCollapsed()"
+        >
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+    </div>
 
-    <!-- Import Button -->
-    <button
-      class="toolbar-button"
-      (click)="openFilePicker()"
-      [disabled]="isLoading()"
-      aria-label="Import IFC file"
-      title="Import IFC file"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="17 8 12 3 7 8"></polyline>
-        <line x1="12" y1="3" x2="12" y2="15"></line>
-      </svg>
-      <span>Import IFC</span>
-    </button>
+    <!-- Sidebar Content -->
+    @if (!isSidebarCollapsed()) {
+      <div class="sidebar-content">
+        <!-- File Input (hidden) -->
+        <input
+          #fileInput
+          type="file"
+          accept=".ifc"
+          (change)="onFileSelected($event)"
+          class="file-input"
+          aria-label="Select IFC file"
+        />
 
-    <!-- Export Button -->
-    <button
-      class="toolbar-button"
-      (click)="downloadFragment()"
-      [disabled]="!currentModel()?.fragmentUuid || isLoading()"
-      aria-label="Download as .frag"
-      title="Download as .frag"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="7 10 12 15 17 10"></polyline>
-        <line x1="12" y1="15" x2="12" y2="3"></line>
-      </svg>
-      <span>Download .frag</span>
-    </button>
+        <!-- Import Section -->
+        <div class="sidebar-section">
+          <h3 class="section-title">Import</h3>
+          <button
+            class="sidebar-button primary"
+            (click)="openFilePicker()"
+            [disabled]="isLoading()"
+            aria-label="Import IFC file"
+            title="Import IFC file"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <span>Import IFC</span>
+          </button>
+          <p class="sidebar-hint">Load your IFC model file</p>
+        </div>
 
-    <!-- Model Info -->
-    @if (currentModel(); as model) {
-      <div class="model-info">
-        <span class="model-name">{{ model.name }}</span>
-        @if (model.status === 'loading' || model.status === 'processing') {
-          <span class="model-progress">{{ model.progress.toFixed(1) }}%</span>
+        <!-- Export Section -->
+        <div class="sidebar-section">
+          <h3 class="section-title">Export</h3>
+          <button
+            class="sidebar-button secondary"
+            (click)="downloadFragment()"
+            [disabled]="!currentModel()?.fragmentUuid || isLoading()"
+            aria-label="Download as .frag"
+            title="Download as .frag"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Download .frag</span>
+          </button>
+          <p class="sidebar-hint">Export as fragment file</p>
+        </div>
+
+        <!-- Model Info Section -->
+        @if (currentModel(); as model) {
+          <div class="sidebar-section">
+            <h3 class="section-title">Model Info</h3>
+            <div class="model-info">
+              <div class="info-row">
+                <span class="info-label">Name:</span>
+                <span class="info-value">{{ model.name }}</span>
+              </div>
+              @if (model.status === 'loading' || model.status === 'processing') {
+                <div class="info-row">
+                  <span class="info-label">Progress:</span>
+                  <span class="info-value">{{ model.progress.toFixed(1) }}%</span>
+                </div>
+              }
+              @if (model.status === 'loaded' && model.stats) {
+                <div class="info-row">
+                  <span class="info-label">Fragments:</span>
+                  <span class="info-value">{{ model.stats.fragmentCount }}</span>
+                </div>
+              }
+            </div>
+          </div>
         }
       </div>
     }
-  </div>
+  </aside>
 
   <!-- Loading Overlay -->
   @if (isLoading()) {

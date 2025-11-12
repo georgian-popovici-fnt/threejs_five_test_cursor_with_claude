@@ -96,6 +96,7 @@ export class IfcViewerComponent {
   readonly currentModel = signal<IFCModelState | null>(null);
   readonly isLoading = signal<boolean>(false);
   readonly errorMessage = signal<string | null>(null);
+  readonly isSidebarCollapsed = signal<boolean>(false); // Sidebar collapse state
 
   // Computed Signals
   readonly hasModel = computed(() => this.currentModel() !== null);
@@ -694,6 +695,13 @@ export class IfcViewerComponent {
    */
   openFilePicker(): void {
     this.fileInputRef().nativeElement.click();
+  }
+
+  /**
+   * Toggle sidebar collapsed state
+   */
+  toggleSidebar(): void {
+    this.isSidebarCollapsed.update((collapsed) => !collapsed);
   }
 
   /**
