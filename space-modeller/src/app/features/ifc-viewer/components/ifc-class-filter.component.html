@@ -1,0 +1,124 @@
+<div class="ifc-class-filter">
+  <!-- Header -->
+  <div class="filter-header">
+    <h3 class="filter-title">IFC Classes</h3>
+    @if (totalClassCount() > 0) {
+      <span class="filter-count">
+        {{ visibleClassCount() }}/{{ totalClassCount() }}
+      </span>
+    }
+  </div>
+
+  <!-- Search Box -->
+  @if (totalClassCount() > 0) {
+    <div class="filter-search">
+      <input
+        type="text"
+        class="search-input"
+        placeholder="Search classes..."
+        [value]="searchTerm()"
+        (input)="onSearchChange($event)"
+        aria-label="Search IFC classes"
+      />
+      @if (searchTerm()) {
+        <button
+          class="search-clear"
+          (click)="clearSearch()"
+          aria-label="Clear search"
+          title="Clear search"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      }
+    </div>
+  }
+
+  <!-- Bulk Actions -->
+  @if (totalClassCount() > 0) {
+    <div class="filter-actions">
+      <button
+        class="action-button"
+        (click)="showAll()"
+        [disabled]="allVisible()"
+        aria-label="Show all classes"
+        title="Show all classes"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+        <span>Show All</span>
+      </button>
+      <button
+        class="action-button"
+        (click)="hideAll()"
+        [disabled]="noneVisible()"
+        aria-label="Hide all classes"
+        title="Hide all classes"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+          <line x1="1" y1="1" x2="23" y2="23"></line>
+        </svg>
+        <span>Hide All</span>
+      </button>
+    </div>
+  }
+
+  <!-- Class List -->
+  <div class="filter-list">
+    @if (totalClassCount() === 0) {
+      <div class="filter-empty">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+        <p class="empty-title">No Model Loaded</p>
+        <p class="empty-hint">Import an IFC file to see available classes</p>
+      </div>
+    } @else if (filteredClasses().length === 0) {
+      <div class="filter-empty">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <p class="empty-title">No Results</p>
+        <p class="empty-hint">Try a different search term</p>
+      </div>
+    } @else {
+      @for (ifcClass of filteredClasses(); track trackByClassName($index, ifcClass)) {
+        <label class="filter-item" [class.disabled]="!ifcClass.visible">
+          <input
+            type="checkbox"
+            class="filter-checkbox"
+            [checked]="ifcClass.visible"
+            (change)="toggleClass(ifcClass.name)"
+            [attr.aria-label]="'Toggle ' + ifcClass.name"
+          />
+          <span 
+            class="color-indicator" 
+            [style.background-color]="ifcClass.color"
+            [attr.aria-hidden]="true"
+          ></span>
+          <span class="class-name">{{ formatClassName(ifcClass.name) }}</span>
+          <span class="class-count">{{ ifcClass.count }}</span>
+        </label>
+      }
+    }
+  </div>
+
+  <!-- Statistics Footer -->
+  @if (totalClassCount() > 0) {
+    <div class="filter-footer">
+      <div class="stat-item">
+        <span class="stat-label">Elements:</span>
+        <span class="stat-value">{{ filterStats().visibleElements }} / {{ filterStats().totalElements }}</span>
+      </div>
+    </div>
+  }
+</div>
+

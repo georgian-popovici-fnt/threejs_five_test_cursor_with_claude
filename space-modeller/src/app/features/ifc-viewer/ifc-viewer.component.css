@@ -123,6 +123,13 @@
   gap: 12px;
 }
 
+/* Filter Section - Make it flexible */
+.sidebar-section.filter-section {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .section-title {
   margin: 0;
   font-size: 12px;

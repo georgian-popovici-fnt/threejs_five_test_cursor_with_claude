@@ -16,10 +16,14 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'stats.js';
 
+// Components
+import { IfcClassFilterComponent } from './components/ifc-class-filter.component';
+
 // Services
 import { FragmentsService } from '../../core/services/fragments.service';
 import { ErrorHandlerService, ErrorSeverity } from '../../core/services/error-handler.service';
 import { ConfigService } from '../../core/services/config.service';
+import { IfcFilterService } from '../../core/services/ifc-filter.service';
 
 // Constants
 import {
@@ -65,7 +69,7 @@ import { validateIfcFile, sanitizeFileName } from '../../shared/utils/validation
 @Component({
   selector: 'app-ifc-viewer',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, IfcClassFilterComponent],
   templateUrl: './ifc-viewer.component.html',
   styleUrls: ['./ifc-viewer.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -77,6 +81,7 @@ export class IfcViewerComponent {
   private readonly fragmentsService = inject(FragmentsService);
   private readonly errorHandler = inject(ErrorHandlerService);
   private readonly configService = inject(ConfigService);
+  private readonly ifcFilterService = inject(IfcFilterService);
 
   // Template References
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
@@ -487,6 +492,9 @@ export class IfcViewerComponent {
       // Get model statistics
       const stats = this.fragmentsService.getModelStatistics(uuid);
 
+      // Extract IFC classes for filtering
+      await this.extractIfcClasses(uuid);
+
       // Update state: mark as fully loaded
       this.ngZone.run(() => {
         this.currentModel.update((state) => {
@@ -612,6 +620,20 @@ export class IfcViewerComponent {
   }
 
   /**
+   * Extract IFC classes from the loaded model
+   */
+  private async extractIfcClasses(modelId: string): Promise<void> {
+    try {
+      console.log('🔍 Extracting IFC classes...');
+      const classes = await this.ifcFilterService.extractClasses(modelId);
+      console.log(`✅ Extracted ${classes.length} IFC classes`);
+    } catch (error) {
+      console.error('❌ Failed to extract IFC classes:', error);
+      // Non-critical error, don't throw
+    }
+  }
+
+  /**
    * Clear previous model and all helpers from the scene
    */
   private async clearPreviousModel(): Promise<void> {
@@ -619,6 +641,9 @@ export class IfcViewerComponent {
     
     if (currentModel?.fragmentUuid) {
       console.log('🗑️ Removing previous model from scene...');
+      
+      // Clear IFC filter state
+      this.ifcFilterService.clear();
       
       // Remove the model from the fragments service
       await this.fragmentsService.removeModel(currentModel.fragmentUuid);
