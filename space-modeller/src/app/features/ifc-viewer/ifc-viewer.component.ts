@@ -90,7 +90,9 @@ export class IfcViewerComponent {
   // Three.js Objects
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
-  private camera!: THREE.PerspectiveCamera;
+  private camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  private perspectiveCamera!: THREE.PerspectiveCamera;
+  private orthographicCamera!: THREE.OrthographicCamera;
   private controls!: OrbitControls;
   private gridHelper?: THREE.GridHelper;
   private stats?: Stats;
@@ -102,6 +104,13 @@ export class IfcViewerComponent {
   readonly isLoading = signal<boolean>(false);
   readonly errorMessage = signal<string | null>(null);
   readonly isSidebarCollapsed = signal<boolean>(false); // Sidebar collapse state
+  readonly cameraType = signal<'perspective' | 'orthographic'>('perspective'); // Camera view type
+  
+  // Camera options for dropdown
+  readonly cameraOptions = [
+    { value: 'perspective', label: '3D View (Perspective)' },
+    { value: 'orthographic', label: '2D View (Orthographic)' }
+  ] as const;
 
   // Computed Signals
   readonly hasModel = computed(() => this.currentModel() !== null);
@@ -228,20 +237,41 @@ export class IfcViewerComponent {
     const config = this.configService.config;
     const aspect = canvas.clientWidth / canvas.clientHeight;
 
-    this.camera = new THREE.PerspectiveCamera(
+    // Initialize perspective camera (3D view)
+    this.perspectiveCamera = new THREE.PerspectiveCamera(
       CAMERA_CONFIG.fov,
       aspect,
       CAMERA_CONFIG.near,
       CAMERA_CONFIG.far
     );
 
-    this.camera.position.set(
+    this.perspectiveCamera.position.set(
       config.cameraPosition.x,
       config.cameraPosition.y,
       config.cameraPosition.z
     );
 
-    console.log('✓ Camera initialized');
+    // Initialize orthographic camera (2D view)
+    const frustumSize = 100;
+    this.orthographicCamera = new THREE.OrthographicCamera(
+      (frustumSize * aspect) / -2,
+      (frustumSize * aspect) / 2,
+      frustumSize / 2,
+      frustumSize / -2,
+      CAMERA_CONFIG.near,
+      CAMERA_CONFIG.far
+    );
+
+    this.orthographicCamera.position.set(
+      config.cameraPosition.x,
+      config.cameraPosition.y,
+      config.cameraPosition.z
+    );
+
+    // Set active camera based on initial state
+    this.camera = this.cameraType() === 'perspective' ? this.perspectiveCamera : this.orthographicCamera;
+
+    console.log('✓ Cameras initialized');
   }
 
   /**
@@ -348,8 +378,24 @@ export class IfcViewerComponent {
 
     if (canvas.width !== width || canvas.height !== height) {
       this.renderer.setSize(width, height, false);
-      this.camera.aspect = width / height;
-      this.camera.updateProjectionMatrix();
+      
+      const aspect = width / height;
+      
+      // Update perspective camera
+      if (this.perspectiveCamera) {
+        this.perspectiveCamera.aspect = aspect;
+        this.perspectiveCamera.updateProjectionMatrix();
+      }
+      
+      // Update orthographic camera
+      if (this.orthographicCamera) {
+        const frustumSize = 100;
+        this.orthographicCamera.left = (frustumSize * aspect) / -2;
+        this.orthographicCamera.right = (frustumSize * aspect) / 2;
+        this.orthographicCamera.top = frustumSize / 2;
+        this.orthographicCamera.bottom = frustumSize / -2;
+        this.orthographicCamera.updateProjectionMatrix();
+      }
     }
   }
 
@@ -575,13 +621,22 @@ export class IfcViewerComponent {
 
     const cameraPos = calculateCameraPosition(
       this.scene,
-      this.camera,
+      this.perspectiveCamera,
       CAMERA_CONFIG.fitPadding
     );
 
+    // Update both cameras
+    this.perspectiveCamera.position.copy(cameraPos.position);
+    this.orthographicCamera.position.copy(cameraPos.position);
     this.camera.position.copy(cameraPos.position);
+    
     this.controls.target.copy(cameraPos.target);
     this.controls.update();
+
+    // Adjust orthographic zoom if it's the active camera
+    if (this.cameraType() === 'orthographic') {
+      this.adjustOrthographicZoom();
+    }
 
     console.log('✓ Camera centered');
   }
@@ -727,6 +782,68 @@ export class IfcViewerComponent {
    */
   toggleSidebar(): void {
     this.isSidebarCollapsed.update((collapsed) => !collapsed);
+  }
+
+  /**
+   * Change camera view type
+   */
+  onCameraChange(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const newType = select.value as 'perspective' | 'orthographic';
+    
+    if (newType === this.cameraType()) {
+      return; // No change needed
+    }
+
+    console.log(`🎥 Switching to ${newType} camera`);
+
+    // Store current camera position and target
+    const currentPosition = this.camera.position.clone();
+    const currentTarget = this.controls.target.clone();
+
+    // Switch active camera
+    this.camera = newType === 'perspective' ? this.perspectiveCamera : this.orthographicCamera;
+
+    // Copy position and look target to new camera
+    this.camera.position.copy(currentPosition);
+    this.camera.lookAt(currentTarget);
+    this.camera.updateProjectionMatrix();
+
+    // Update controls to use new camera
+    this.controls.object = this.camera as any;
+    this.controls.target.copy(currentTarget);
+    this.controls.update();
+
+    // Update camera type signal
+    this.cameraType.set(newType);
+
+    // Update fragments service camera binding
+    this.fragmentsService.bindCamera(this.camera);
+
+    // Adjust orthographic camera zoom to match perspective view
+    if (newType === 'orthographic') {
+      this.adjustOrthographicZoom();
+    }
+
+    console.log(`✓ Switched to ${newType} camera`);
+  }
+
+  /**
+   * Adjust orthographic camera zoom to approximate perspective view
+   */
+  private adjustOrthographicZoom(): void {
+    // Calculate appropriate zoom based on distance from target
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    const frustumSize = distance * 0.5;
+    
+    const canvas = this.canvasRef().nativeElement;
+    const aspect = canvas.clientWidth / canvas.clientHeight;
+    
+    this.orthographicCamera.left = (frustumSize * aspect) / -2;
+    this.orthographicCamera.right = (frustumSize * aspect) / 2;
+    this.orthographicCamera.top = frustumSize / 2;
+    this.orthographicCamera.bottom = frustumSize / -2;
+    this.orthographicCamera.updateProjectionMatrix();
   }
 
   /**

@@ -181,7 +181,7 @@ export class IfcFilterService {
       // Method 5: Check fragment.fragments map (if it exists)
       if (fragment.fragments && typeof fragment.fragments === 'object') {
         const keys = Object.keys(fragment.fragments);
-        if (keys.length > 0) {
+        if (keys.length > 0 && keys[0]) {
           const match = keys[0].match(/Ifc[A-Z][a-zA-Z]*/);
           if (match) {
             return match[0];

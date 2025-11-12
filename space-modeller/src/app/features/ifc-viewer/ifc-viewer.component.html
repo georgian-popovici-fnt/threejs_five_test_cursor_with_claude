@@ -55,6 +55,28 @@
           aria-label="Select IFC file"
         />
 
+        <!-- Camera View Section -->
+        <div class="sidebar-section">
+          <h3 class="section-title">Camera View</h3>
+          <div class="camera-select-wrapper">
+            <select
+              class="camera-select"
+              [value]="cameraType()"
+              (change)="onCameraChange($event)"
+              aria-label="Select camera view type"
+              title="Choose between 3D perspective or 2D orthographic view"
+            >
+              @for (option of cameraOptions; track option.value) {
+                <option [value]="option.value">{{ option.label }}</option>
+              }
+            </select>
+            <svg class="select-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <p class="sidebar-hint">Switch between 3D and 2D views</p>
+        </div>
+
         <!-- Import Section -->
         <div class="sidebar-section">
           <h3 class="section-title">Import</h3>
