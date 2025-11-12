@@ -485,17 +485,17 @@ export class IfcViewerComponent {
 
       // Update state: mark as fully loaded
       this.ngZone.run(() => {
-        this.currentModel.update((state) =>
-          state
-            ? {
-                ...state,
-                status: ModelLoadingStatus.LOADED,
-                fragmentUuid: uuid,
-                loadedAt: new Date(),
-                stats,
-              }
-            : state
-        );
+        this.currentModel.update((state) => {
+          if (!state) return state;
+          
+          return {
+            ...state,
+            status: ModelLoadingStatus.LOADED,
+            fragmentUuid: uuid,
+            loadedAt: new Date(),
+            stats: stats || undefined,
+          };
+        });
       });
 
       console.log(`✅ Successfully loaded: ${file.name}`);

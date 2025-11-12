@@ -64,7 +64,9 @@ export interface IFCModelState {
     timestamp: Date;
   };
   /** Model statistics */
-  stats?: ModelStatistics;
+  stats?: ModelStatistics | null;
+  /** @deprecated Use status instead - kept for backward compatibility */
+  loading?: boolean;
 }
 
 /**

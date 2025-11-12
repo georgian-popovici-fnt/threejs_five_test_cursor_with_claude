@@ -262,12 +262,16 @@ export class FragmentsService {
 
     let addedCount = 0;
 
-    // Iterate through all fragments in the model
-    if (model.items && model.items.size > 0) {
-      console.log(`📦 Processing ${model.items.size} fragments...`);
+    // Access the model as any to handle different library versions
+    const modelAny = model as any;
 
-      model.items.forEach((fragment, fragmentId) => {
-        if (fragment.mesh) {
+    // Iterate through all fragments in the model
+    if (modelAny.items && typeof modelAny.items.forEach === 'function') {
+      const itemsSize = modelAny.items.size || modelAny.items.length || 0;
+      console.log(`📦 Processing ${itemsSize} fragments...`);
+
+      modelAny.items.forEach((fragment: any, fragmentId: string) => {
+        if (fragment && fragment.mesh) {
           // Add mesh if not already in scene
           if (!fragment.mesh.parent) {
             this.scene!.add(fragment.mesh);
@@ -409,9 +413,10 @@ export class FragmentsService {
       }
 
       // Remove fragment meshes from scene
-      if (model.items) {
-        model.items.forEach((fragment) => {
-          if (fragment.mesh && fragment.mesh.parent) {
+      const modelAny = model as any;
+      if (modelAny.items && typeof modelAny.items.forEach === 'function') {
+        modelAny.items.forEach((fragment: any) => {
+          if (fragment && fragment.mesh && fragment.mesh.parent) {
             fragment.mesh.parent.remove(fragment.mesh);
           }
         });

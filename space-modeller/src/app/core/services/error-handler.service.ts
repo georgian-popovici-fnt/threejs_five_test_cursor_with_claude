@@ -61,7 +61,7 @@ export class ErrorHandlerService {
    */
   get latestError(): AppError | null {
     const errors = this.errors$.value;
-    return errors.length > 0 ? errors[0] : null;
+    return errors.length > 0 ? errors[0]! : null;
   }
 
   /**

@@ -55,7 +55,7 @@
     @if (currentModel(); as model) {
       <div class="model-info">
         <span class="model-name">{{ model.name }}</span>
-        @if (model.loading) {
+        @if (model.status === 'loading' || model.status === 'processing') {
           <span class="model-progress">{{ model.progress.toFixed(1) }}%</span>
         }
       </div>
