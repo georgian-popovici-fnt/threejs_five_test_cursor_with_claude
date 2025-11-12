@@ -1,27 +1,80 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import * as THREE from 'three';
 import * as OBC from '@thatopen/components';
 import * as FRAGS from '@thatopen/fragments';
-import { VIEWER_CONFIG, FRAGMENTS_WORKER_URL } from '../../shared/constants/viewer.constants';
+import { ErrorHandlerService, ErrorSeverity } from './error-handler.service';
+import { ConfigService } from './config.service';
+import { IfcLoadConfig, ExportResult, ModelStatistics } from '../../shared/models/ifc.model';
+import {
+  calculateModelStatistics,
+  disposeObject,
+  estimateMemoryUsage,
+} from '../../shared/utils/three.utils';
 
 /**
  * Service for managing ThatOpen Components and Fragments
- * Handles initialization and lifecycle of IFC processing components
+ * Handles initialization, IFC loading, and lifecycle management
+ * 
+ * Features:
+ * - Proper error handling and reporting
+ * - Resource management and cleanup
+ * - Progress tracking
+ * - Model statistics
+ * - Fragment export
+ * 
+ * @example
+ * ```typescript
+ * constructor(private fragmentsService: FragmentsService) {}
+ * 
+ * async loadModel() {
+ *   await this.fragmentsService.initialize(scene, camera);
+ *   const uuid = await this.fragmentsService.loadIfc(buffer, 'model-name', progress => {
+ *     console.log('Progress:', progress);
+ *   });
+ * }
+ * ```
  */
 @Injectable({
   providedIn: 'root',
 })
 export class FragmentsService {
+  private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly configService = inject(ConfigService);
+
+  // ThatOpen Components
   private components: OBC.Components | null = null;
   private ifcLoader: OBC.IfcLoader | null = null;
   private fragmentsManager: OBC.FragmentsManager | null = null;
+
+  // Three.js references
   private scene: THREE.Scene | null = null;
   private camera: THREE.Camera | null = null;
+
+  // State
   private initialized = false;
+  private readonly loadedModels = new Map<string, FRAGS.FragmentsModel>();
+
+  /**
+   * Check if service is initialized
+   */
+  get isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Get count of loaded models
+   */
+  get modelCount(): number {
+    return this.loadedModels.size;
+  }
 
   /**
    * Initialize the ThatOpen Components system
    * Must be called before using any fragment functionality
+   * 
+   * @param scene - Three.js scene to render into
+   * @param camera - Three.js camera for viewing
+   * @throws Error if initialization fails
    */
   async initialize(scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
     if (this.initialized) {
@@ -30,326 +83,375 @@ export class FragmentsService {
     }
 
     try {
-      console.log('Initializing FragmentsService...');
+      console.log('🔧 Initializing FragmentsService...');
       
-      // Store scene and camera references
-      this.scene = scene;
-      this.camera = camera;
-      console.log('Scene and camera stored in service');
-      
-      // Initialize Components
-      // ThatOpen Components v3 works differently - it manages its own internal state
-      // We just need to create the Components instance and then manually add loaded models to our scene
-      this.components = new OBC.Components();
-      console.log('Components created (manages loading, we handle scene integration)');
-
-      // Get FragmentsManager from components
-      this.fragmentsManager = this.components.get(OBC.FragmentsManager);
-      console.log('FragmentsManager obtained from components');
-
-      // Initialize FragmentsManager with worker URL
-      // This MUST be called before loading any IFC files
-      try {
-        console.log('Initializing FragmentsManager with worker URL:', FRAGMENTS_WORKER_URL);
-        console.log('Worker URL type:', typeof FRAGMENTS_WORKER_URL);
-        console.log('Worker URL value:', FRAGMENTS_WORKER_URL);
-        
-        // Check if worker file is accessible
-        try {
-          const workerCheck = await fetch(FRAGMENTS_WORKER_URL, { method: 'HEAD' });
-          console.log('Worker file accessible:', workerCheck.ok, 'Status:', workerCheck.status);
-          if (!workerCheck.ok) {
-            throw new Error(`Worker file not accessible at ${FRAGMENTS_WORKER_URL}. Status: ${workerCheck.status}`);
-          }
-        } catch (fetchError) {
-          console.error('Failed to verify worker file:', fetchError);
-          throw new Error(`Cannot access worker file at ${FRAGMENTS_WORKER_URL}: ${fetchError}`);
-        }
-        
-        this.fragmentsManager.init(FRAGMENTS_WORKER_URL);
-        console.log('init() call completed');
-        
-        // Verify FragmentsManager is initialized immediately after init()
-        console.log('FragmentsManager.initialized:', this.fragmentsManager.initialized);
-        
-        if (!this.fragmentsManager.initialized) {
-          throw new Error('FragmentsManager.init() did not set the initialized flag. Worker may have failed to load.');
-        }
-        
-        console.log('FragmentsManager core:', this.fragmentsManager.core);
-        console.log('FragmentsManager core.models:', this.fragmentsManager.core.models);
-      } catch (error) {
-        console.error('Error during FragmentsManager initialization:', error);
-        throw new Error(`Failed to initialize FragmentsManager: ${error instanceof Error ? error.message : String(error)}`);
+      // Validate inputs
+      if (!scene || !camera) {
+        throw new Error('Scene and camera are required for initialization');
       }
 
+      // Store references
+      this.scene = scene;
+      this.camera = camera;
+
+      // Initialize Components
+      this.components = new OBC.Components();
+      console.log('✓ Components created');
+
+      // Get FragmentsManager
+      this.fragmentsManager = this.components.get(OBC.FragmentsManager);
+      console.log('✓ FragmentsManager obtained');
+
+      // Initialize FragmentsManager with worker
+      await this.initializeFragmentsManager();
+
       // Initialize IFC Loader
-      this.ifcLoader = this.components.get(OBC.IfcLoader);
-      console.log('IfcLoader obtained from components');
-      
-      // Configure WASM path for web-ifc
-      const wasmPath = VIEWER_CONFIG.wasmPath;
-      console.log('Setting up IfcLoader with WASM path:', wasmPath);
-      
-      await this.ifcLoader.setup({
-        autoSetWasm: false, // CRITICAL: Disable auto WASM fetching from CDN
-        wasm: {
-          path: wasmPath,
-          absolute: wasmPath.startsWith('http'),
-        },
-      });
+      await this.initializeIfcLoader();
 
       this.initialized = true;
-      console.log('FragmentsService initialized successfully');
+      console.log('✅ FragmentsService initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize FragmentsService:', error);
-      throw error;
+      this.errorHandler.handleError(error, ErrorSeverity.CRITICAL, {
+        operation: 'initialize',
+        component: 'FragmentsService',
+      });
+      throw new Error(`Failed to initialize FragmentsService: ${error}`);
     }
   }
 
   /**
+   * Initialize FragmentsManager with worker URL
+   */
+  private async initializeFragmentsManager(): Promise<void> {
+    if (!this.fragmentsManager) {
+      throw new Error('FragmentsManager is null');
+    }
+
+    const workerUrl = this.configService.fragmentsWorkerUrl;
+    console.log('🔧 Initializing FragmentsManager with worker:', workerUrl);
+
+    // Verify worker file is accessible
+    try {
+      const workerCheck = await fetch(workerUrl, { method: 'HEAD' });
+      if (!workerCheck.ok) {
+        throw new Error(
+          `Worker file not accessible at ${workerUrl}. Status: ${workerCheck.status}. ` +
+          `Make sure worker.mjs is in the public folder.`
+        );
+      }
+      console.log('✓ Worker file verified');
+    } catch (fetchError) {
+      throw new Error(
+        `Cannot access worker file at ${workerUrl}: ${fetchError}. ` +
+        `Ensure the worker.mjs file exists in the public folder.`
+      );
+    }
+
+    // Initialize the manager
+    this.fragmentsManager.init(workerUrl);
+
+    // Verify initialization
+    if (!this.fragmentsManager.initialized) {
+      throw new Error(
+        'FragmentsManager.init() did not set initialized flag. ' +
+        'Worker may have failed to load.'
+      );
+    }
+
+    console.log('✓ FragmentsManager initialized');
+  }
+
+  /**
+   * Initialize IFC Loader
+   */
+  private async initializeIfcLoader(): Promise<void> {
+    if (!this.components) {
+      throw new Error('Components not initialized');
+    }
+
+    this.ifcLoader = this.components.get(OBC.IfcLoader);
+    console.log('🔧 Initializing IfcLoader...');
+
+    const config = this.configService.config;
+    const wasmPath = config.wasmPath;
+
+    console.log('WASM path:', wasmPath);
+
+    await this.ifcLoader.setup({
+      autoSetWasm: false,
+      wasm: {
+        path: wasmPath,
+        absolute: wasmPath.startsWith('http'),
+      },
+    });
+
+    console.log('✓ IfcLoader initialized');
+  }
+
+  /**
    * Load an IFC file and convert to fragments
-   * @param buffer IFC file data as Uint8Array
-   * @param name Model name
-   * @param onProgress Progress callback (0-100)
-   * @returns Fragment model ID
+   * 
+   * @param buffer - IFC file data as Uint8Array
+   * @param name - Model name for identification
+   * @param onProgress - Optional progress callback (0-100)
+   * @returns Fragment model UUID
+   * @throws Error if loading fails
    */
   async loadIfc(
     buffer: Uint8Array,
     name: string,
     onProgress?: (progress: number) => void
   ): Promise<string> {
-    if (!this.initialized || !this.ifcLoader || !this.fragmentsManager) {
-      throw new Error('FragmentsService not initialized');
+    this.ensureInitialized();
+
+    if (!buffer || buffer.length === 0) {
+      throw new Error('Invalid buffer: empty or null');
+    }
+
+    if (!name || typeof name !== 'string') {
+      throw new Error('Invalid model name');
     }
 
     try {
-      console.log(`Starting IFC load for: ${name}`);
-      console.log(`Buffer size: ${buffer.length} bytes`);
+      console.log(`📦 Loading IFC: ${name} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
       
-      // Double-check that FragmentsManager is still initialized
-      if (!this.fragmentsManager) {
-        throw new Error('FragmentsManager is null');
-      }
-      console.log('Pre-load FragmentsManager.initialized:', this.fragmentsManager.initialized);
-      
-      if (!this.fragmentsManager.initialized) {
-        throw new Error('FragmentsManager is not initialized before load(). This should not happen.');
-      }
-      
-      // Set up progress tracking if callback provided
       onProgress?.(0);
 
       // Load the IFC file
-      // In ThatOpen Components v3.x, the load method signature is:
-      // load(data: Uint8Array, coordinate: boolean, name: string, config?: {...})
-      console.log('Calling ifcLoader.load()...');
-      
-      // Note: Progress callbacks are disabled for now due to internal library issues
-      // The library will still load the file, just without progress updates
-      const model = await this.ifcLoader.load(
-        buffer,
-        true, // coordinate
-        name // name
-        // config is omitted - passing undefined or empty config causes issues
-      );
+      const model = await this.ifcLoader!.load(buffer, true, name);
 
-      if (!model) {
-        throw new Error('Failed to load IFC model - model is null');
+      if (!model || !model.modelId) {
+        throw new Error('Failed to load IFC model: model is null or has no ID');
       }
 
-      // Ensure model has a valid ID
-      if (!model.modelId) {
-        throw new Error('Loaded model has no modelId');
+      console.log(`✓ Model loaded: ${name} (ID: ${model.modelId})`);
+
+      // Add fragments to scene
+      const addedCount = this.addFragmentsToScene(model);
+      console.log(`✓ Added ${addedCount} fragment meshes to scene`);
+
+      if (addedCount === 0) {
+        console.warn('⚠️ No fragments were added to scene - model may not be visible');
       }
 
-      console.log(`Model "${name}" loaded successfully`);
-      console.log('Model type:', model.constructor.name);
-      console.log('Model ID:', model.modelId);
-      
-      // CRITICAL FIX: Add fragments to the scene
-      // In ThatOpen Components v3, the geometry is stored as Fragment objects
-      if (!this.scene) {
-        throw new Error('Scene is null, cannot add model');
-      }
-      
-      console.log('🔍 Adding model to scene...');
-      console.log('Model type:', model.constructor.name);
-      console.log('Model ID:', model.modelId);
-      
-      // The FragmentsModel contains Fragment objects that hold the actual geometry
-      // Each Fragment has meshes that need to be added to the scene
-      let addedMeshCount = 0;
-      let fragmentCount = 0;
-      
-      // Iterate through all fragments in the model
-      // model.items is a Map<string, Fragment>
-      if (model.items && model.items.size > 0) {
-        console.log(`Found ${model.items.size} fragments in model`);
-        
-        model.items.forEach((fragment, fragmentId) => {
-          fragmentCount++;
-          console.log(`Processing fragment ${fragmentCount}/${model.items.size}:`, fragmentId);
-          
-          // Each fragment has a mesh property that is a THREE.InstancedMesh or THREE.Mesh
-          if (fragment.mesh) {
-            console.log('  Fragment has mesh:', fragment.mesh.constructor.name);
-            console.log('  Mesh visible:', fragment.mesh.visible);
-            console.log('  Mesh vertex count:', fragment.mesh.geometry?.getAttribute('position')?.count || 0);
-            
-            // Add the mesh to the scene
-            if (!fragment.mesh.parent) {
-              this.scene.add(fragment.mesh);
-              fragment.mesh.visible = true;
-              fragment.mesh.frustumCulled = true;
-              addedMeshCount++;
-              console.log(`  ✅ Added fragment mesh to scene`);
-            } else {
-              console.log(`  ⚠️ Fragment mesh already has parent:`, fragment.mesh.parent.name || fragment.mesh.parent.type);
-            }
-          } else {
-            console.warn(`  ⚠️ Fragment ${fragmentId} has no mesh property`);
-          }
-        });
-        
-        console.log(`✅ Successfully added ${addedMeshCount}/${fragmentCount} fragment meshes to scene`);
-      } else {
-        console.warn('⚠️ Model has no fragments (model.items is empty or undefined)');
-        console.log('Model.items:', model.items);
-        
-        // Fallback: try adding model.object if it exists
-        if (model.object) {
-          console.log('Attempting fallback: adding model.object to scene');
-          if (!model.object.parent) {
-            this.scene.add(model.object);
-            console.log('✅ Added model.object to scene (fallback)');
-          }
-        }
-      }
-      
-      // Additional check: ensure model is visible in the scene
-      if (addedMeshCount === 0) {
-        console.error('❌ ERROR: No meshes were added to the scene!');
-        console.error('This indicates a problem with the model structure or library version.');
-        console.error('Model structure:', {
-          hasItems: !!model.items,
-          itemsSize: model.items?.size,
-          hasObject: !!model.object,
-          objectChildren: model.object?.children?.length,
-        });
-      }
-      
-      // Report 100% progress (we only get start and end, no intermediate updates)
+      // Store model reference
+      this.loadedModels.set(model.modelId, model);
+
       onProgress?.(100);
-      
-      // Return the model ID for retrieval later
+
       return model.modelId;
     } catch (error) {
-      console.error('Failed to load IFC file:', error);
-      // Make sure we get detailed error information
-      if (error instanceof Error) {
-        console.error('Error details:', error.message);
-        console.error('Stack trace:', error.stack);
-      }
-      throw error;
+      this.errorHandler.handleError(error, ErrorSeverity.ERROR, {
+        operation: 'loadIfc',
+        modelName: name,
+        bufferSize: buffer.length,
+      });
+      throw new Error(`Failed to load IFC file "${name}": ${error}`);
     }
   }
 
   /**
-   * Get a fragments model by ID
+   * Add fragment meshes to the Three.js scene
+   * @param model - FragmentsModel to add
+   * @returns Number of meshes added
    */
-  getModel(id: string): FRAGS.FragmentsModel | undefined {
-    if (!this.fragmentsManager) {
-      console.warn('FragmentsManager not initialized');
-      return undefined;
+  private addFragmentsToScene(model: FRAGS.FragmentsModel): number {
+    if (!this.scene) {
+      throw new Error('Scene is null');
     }
+
+    let addedCount = 0;
+
+    // Iterate through all fragments in the model
+    if (model.items && model.items.size > 0) {
+      console.log(`📦 Processing ${model.items.size} fragments...`);
+
+      model.items.forEach((fragment, fragmentId) => {
+        if (fragment.mesh) {
+          // Add mesh if not already in scene
+          if (!fragment.mesh.parent) {
+            this.scene!.add(fragment.mesh);
+            fragment.mesh.visible = true;
+            fragment.mesh.frustumCulled = true;
+            addedCount++;
+          }
+        } else {
+          console.warn(`⚠️ Fragment ${fragmentId} has no mesh`);
+        }
+      });
+    } else {
+      // Fallback: try adding model.object
+      if (model.object && !model.object.parent) {
+        this.scene.add(model.object);
+        console.log('✓ Added model.object to scene (fallback)');
+        addedCount = 1;
+      }
+    }
+
+    return addedCount;
+  }
+
+  /**
+   * Get a fragments model by ID
+   * @param modelId - Model UUID
+   * @returns FragmentsModel or undefined if not found
+   */
+  getModel(modelId: string): FRAGS.FragmentsModel | undefined {
+    // First check local cache
+    let model = this.loadedModels.get(modelId);
     
-    // In v3.x, FragmentsModels are stored in the FragmentsManager list
-    const model = this.fragmentsManager.list.get(id);
-    
+    // If not in cache, try to get from FragmentsManager
+    if (!model && this.fragmentsManager) {
+      model = this.fragmentsManager.list.get(modelId);
+      if (model) {
+        this.loadedModels.set(modelId, model);
+      }
+    }
+
     if (!model) {
-      console.warn(`Model with ID ${id} not found`);
-      console.log('Available models:', Array.from(this.fragmentsManager.list.keys()));
+      console.warn(`Model with ID ${modelId} not found`);
+      console.log('Available models:', Array.from(this.loadedModels.keys()));
     }
-    
+
     return model;
   }
 
   /**
    * Get all loaded fragment models
+   * @returns Array of all loaded models
    */
   getAllModels(): FRAGS.FragmentsModel[] {
-    if (!this.fragmentsManager) {
-      return [];
+    return Array.from(this.loadedModels.values());
+  }
+
+  /**
+   * Get model statistics
+   * @param modelId - Model UUID
+   * @returns Model statistics or null if model not found
+   */
+  getModelStatistics(modelId: string): ModelStatistics | null {
+    const model = this.getModel(modelId);
+    if (!model || !model.object) {
+      return null;
     }
+
+    const stats = calculateModelStatistics(model.object);
+    const memoryBytes = estimateMemoryUsage(model.object);
     
-    // Return all fragment models as an array
-    const models: FRAGS.FragmentsModel[] = [];
-    this.fragmentsManager.list.forEach((model) => {
-      models.push(model);
-    });
-    return models;
+    return {
+      ...stats,
+      memoryUsage: Math.round(memoryBytes / 1024 / 1024 * 100) / 100, // MB
+    };
   }
 
   /**
    * Export a fragments model as binary data
-   * @param id Model ID
-   * @returns Buffer containing fragment data
+   * @param modelId - Model UUID
+   * @returns Export result with data or error
    */
-  async exportFragment(id: string): Promise<Uint8Array | null> {
-    const model = this.getModel(id);
-    if (!model) {
-      console.error('Model not found:', id);
-      return null;
-    }
+  async exportFragment(modelId: string): Promise<ExportResult> {
+    const startTime = performance.now();
 
     try {
-      console.log('Exporting fragment model:', id);
-      
-      // In v3.x, FragmentsModel has a getBuffer method
-      const buffer = await model.getBuffer();
-      
-      console.log(`Fragment exported: ${buffer.byteLength} bytes`);
-      return new Uint8Array(buffer);
-    } catch (error) {
-      console.error('Failed to export fragment:', error);
-      if (error instanceof Error) {
-        console.error('Error details:', error.message);
+      const model = this.getModel(modelId);
+      if (!model) {
+        return {
+          success: false,
+          error: `Model with ID ${modelId} not found`,
+        };
       }
-      return null;
+
+      console.log(`📤 Exporting fragment: ${modelId}`);
+
+      const buffer = await model.getBuffer();
+      const data = new Uint8Array(buffer);
+      const duration = Math.round(performance.now() - startTime);
+
+      console.log(`✓ Fragment exported: ${data.byteLength} bytes in ${duration}ms`);
+
+      return {
+        success: true,
+        data,
+        fileSize: data.byteLength,
+        duration,
+      };
+    } catch (error) {
+      this.errorHandler.handleError(error, ErrorSeverity.ERROR, {
+        operation: 'exportFragment',
+        modelId,
+      });
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration: Math.round(performance.now() - startTime),
+      };
     }
   }
 
   /**
-   * Bind a camera to all loaded fragments for culling
-   * In v3.x, this is handled differently
+   * Remove a model from the scene and memory
+   * @param modelId - Model UUID
+   * @returns True if successfully removed
+   */
+  async removeModel(modelId: string): Promise<boolean> {
+    try {
+      const model = this.getModel(modelId);
+      if (!model) {
+        return false;
+      }
+
+      console.log(`🗑️ Removing model: ${modelId}`);
+
+      // Remove from scene
+      if (model.object && model.object.parent) {
+        model.object.parent.remove(model.object);
+      }
+
+      // Remove fragment meshes from scene
+      if (model.items) {
+        model.items.forEach((fragment) => {
+          if (fragment.mesh && fragment.mesh.parent) {
+            fragment.mesh.parent.remove(fragment.mesh);
+          }
+        });
+      }
+
+      // Dispose model
+      if (typeof model.dispose === 'function') {
+        await model.dispose();
+      }
+
+      // Remove from cache
+      this.loadedModels.delete(modelId);
+
+      console.log(`✓ Model removed: ${modelId}`);
+      return true;
+    } catch (error) {
+      this.errorHandler.handleError(error, ErrorSeverity.WARNING, {
+        operation: 'removeModel',
+        modelId,
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Bind camera for culling (if supported by library)
+   * @param camera - Three.js camera
    */
   bindCamera(camera: THREE.Camera): void {
-    if (!this.fragmentsManager) {
-      console.warn('FragmentsManager not initialized');
-      return;
-    }
-    
-    // In v3.x, we can set the camera for culling if needed
-    console.log('Camera reference stored for fragment culling');
+    this.camera = camera;
+    console.log('✓ Camera bound for fragment culling');
   }
 
   /**
    * Update culling for all fragments
-   * Call this after camera movement stops
+   * Call this after camera movement stops for performance optimization
    */
   async updateCulling(): Promise<void> {
-    if (!this.fragmentsManager) {
-      return;
-    }
-
-    try {
-      // In v3.x, culling updates are handled automatically
-      // This method is here for compatibility but may not be needed
-      console.log('Culling update (handled automatically in v3)');
-    } catch (error) {
-      console.warn('Failed to update culling:', error);
-    }
+    // ThatOpen Components v3 handles culling automatically
+    // This method is here for API compatibility
   }
 
   /**
@@ -357,57 +459,56 @@ export class FragmentsService {
    * Call this when the viewer is destroyed
    */
   async dispose(): Promise<void> {
+    if (!this.initialized) {
+      return;
+    }
+
     try {
-      console.log('Disposing FragmentsService...');
-      
-      if (this.fragmentsManager) {
-        // Dispose all fragment models
-        try {
-          const models = this.getAllModels();
-          for (const model of models) {
-            if (model && typeof model.dispose === 'function') {
-              await model.dispose();
-            }
-          }
-        } catch (error) {
-          console.warn('Failed to dispose fragment models:', error);
-        }
+      console.log('🗑️ Disposing FragmentsService...');
+
+      // Dispose all models
+      const disposePromises = Array.from(this.loadedModels.keys()).map((id) =>
+        this.removeModel(id)
+      );
+      await Promise.all(disposePromises);
+
+      // Dispose IFC loader
+      if (this.ifcLoader && typeof this.ifcLoader.dispose === 'function') {
+        this.ifcLoader.dispose();
       }
 
-      if (this.ifcLoader) {
-        // Dispose IFC loader
-        try {
-          if (typeof this.ifcLoader.dispose === 'function') {
-            this.ifcLoader.dispose();
-          }
-        } catch (error) {
-          console.warn('Failed to dispose IFC loader:', error);
-        }
-      }
-
+      // Dispose components
       if (this.components) {
-        try {
-          this.components.dispose();
-        } catch (error) {
-          console.warn('Failed to dispose components:', error);
-        }
+        this.components.dispose();
       }
 
+      // Clear references
+      this.loadedModels.clear();
       this.fragmentsManager = null;
       this.ifcLoader = null;
       this.components = null;
+      this.scene = null;
+      this.camera = null;
       this.initialized = false;
 
-      console.log('FragmentsService disposed successfully');
+      console.log('✅ FragmentsService disposed');
     } catch (error) {
-      console.error('Error during FragmentsService disposal:', error);
+      this.errorHandler.handleError(error, ErrorSeverity.WARNING, {
+        operation: 'dispose',
+        component: 'FragmentsService',
+      });
     }
   }
 
   /**
-   * Check if service is initialized
+   * Ensure service is initialized
+   * @throws Error if not initialized
    */
-  isInitialized(): boolean {
-    return this.initialized;
+  private ensureInitialized(): void {
+    if (!this.initialized || !this.ifcLoader || !this.fragmentsManager) {
+      throw new Error(
+        'FragmentsService not initialized. Call initialize() first.'
+      );
+    }
   }
 }

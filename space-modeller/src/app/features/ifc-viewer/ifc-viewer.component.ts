@@ -8,21 +8,60 @@ import {
   afterNextRender,
   signal,
   DestroyRef,
+  computed,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'stats.js';
+
+// Services
 import { FragmentsService } from '../../core/services/fragments.service';
+import { ErrorHandlerService, ErrorSeverity } from '../../core/services/error-handler.service';
+import { ConfigService } from '../../core/services/config.service';
+
+// Constants
 import {
-  VIEWER_CONFIG,
   RENDERER_CONFIG,
   CAMERA_CONFIG,
   CONTROLS_CONFIG,
+  LIGHTING_CONFIG,
 } from '../../shared/constants/viewer.constants';
-import { ModelState } from '../../shared/models/viewer.model';
 
+// Models
+import { IFCModelState, ModelLoadingStatus, ModelStatistics } from '../../shared/models/ifc.model';
+
+// Utils
+import {
+  calculateCameraPosition,
+  calculateBoundingBox,
+  createStyledGrid,
+  fixMaterials,
+  disposeObject,
+  formatBytes,
+} from '../../shared/utils/three.utils';
+import { validateIfcFile, sanitizeFileName } from '../../shared/utils/validation.utils';
+
+/**
+ * IFC Viewer Component
+ * 
+ * A professional-grade IFC model viewer built with Angular 18, Three.js, and ThatOpen Components.
+ * 
+ * Features:
+ * - IFC file loading with progress tracking
+ * - Orbit controls for navigation
+ * - Fragment export capability
+ * - Performance monitoring
+ * - Error handling and user feedback
+ * - Responsive design
+ * - Accessibility support
+ * 
+ * @example
+ * ```html
+ * <app-ifc-viewer></app-ifc-viewer>
+ * ```
+ */
 @Component({
   selector: 'app-ifc-viewer',
   standalone: true,
@@ -32,13 +71,18 @@ import { ModelState } from '../../shared/models/viewer.model';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class IfcViewerComponent {
+  // Dependency Injection
   private readonly ngZone = inject(NgZone);
   private readonly destroyRef = inject(DestroyRef);
   private readonly fragmentsService = inject(FragmentsService);
+  private readonly errorHandler = inject(ErrorHandlerService);
+  private readonly configService = inject(ConfigService);
+
+  // Template References
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly fileInputRef = viewChild.required<ElementRef<HTMLInputElement>>('fileInput');
 
-  // Three.js objects
+  // Three.js Objects
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
@@ -46,99 +90,74 @@ export class IfcViewerComponent {
   private gridHelper?: THREE.GridHelper;
   private stats?: Stats;
   private animationFrameId?: number;
-
-  // State
-  readonly currentModel = signal<ModelState | null>(null);
-  readonly isLoading = signal<boolean>(false);
-
-  // Resize observer
   private resizeObserver?: ResizeObserver;
 
+  // State Management (Signals)
+  readonly currentModel = signal<IFCModelState | null>(null);
+  readonly isLoading = signal<boolean>(false);
+  readonly errorMessage = signal<string | null>(null);
+
+  // Computed Signals
+  readonly hasModel = computed(() => this.currentModel() !== null);
+  readonly canExport = computed(() => {
+    const model = this.currentModel();
+    return model?.status === ModelLoadingStatus.LOADED && !!model?.fragmentUuid;
+  });
+
   constructor() {
+    // Initialize after view is rendered
     afterNextRender(() => {
-      this.initViewer();
-      this.ngZone.runOutsideAngular(() => this.animate());
+      this.initializeViewer().catch((error) => {
+        this.errorHandler.handleError(error, ErrorSeverity.CRITICAL, {
+          operation: 'initializeViewer',
+        });
+        this.errorMessage.set('Failed to initialize viewer. Please refresh the page.');
+      });
     });
+
+    // Subscribe to configuration changes
+    this.configService.config$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((config) => {
+        console.log('⚙️ Configuration updated:', config);
+        // Update visual elements based on config changes
+        this.updateVisualSettings(config);
+      });
   }
 
   /**
    * Initialize the Three.js viewer and ThatOpen components
    */
-  private async initViewer(): Promise<void> {
+  private async initializeViewer(): Promise<void> {
     try {
+      console.log('🚀 Initializing IFC Viewer...');
+      
       const canvas = this.canvasRef().nativeElement;
+      const config = this.configService.config;
 
       // Initialize Three.js renderer
-      this.renderer = new THREE.WebGLRenderer({
-        canvas,
-        antialias: RENDERER_CONFIG.antialias,
-        alpha: RENDERER_CONFIG.alpha,
-        preserveDrawingBuffer: RENDERER_CONFIG.preserveDrawingBuffer,
-        powerPreference: RENDERER_CONFIG.powerPreference,
-      });
-
-      // Modern rendering setup
-      this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.renderer.toneMappingExposure = 1.0;
-      this.renderer.setPixelRatio(
-        Math.min(window.devicePixelRatio, RENDERER_CONFIG.maxPixelRatio)
-      );
-
+      this.initializeRenderer(canvas);
+      
       // Initialize scene
-      this.scene = new THREE.Scene();
-      this.scene.background = new THREE.Color(VIEWER_CONFIG.backgroundColor);
-
+      this.initializeScene();
+      
       // Initialize camera
-      const aspect = canvas.clientWidth / canvas.clientHeight;
-      this.camera = new THREE.PerspectiveCamera(
-        CAMERA_CONFIG.fov,
-        aspect,
-        CAMERA_CONFIG.near,
-        CAMERA_CONFIG.far
-      );
-      this.camera.position.set(
-        VIEWER_CONFIG.cameraPosition.x,
-        VIEWER_CONFIG.cameraPosition.y,
-        VIEWER_CONFIG.cameraPosition.z
-      );
-
-      // Initialize OrbitControls
-      this.controls = new OrbitControls(this.camera, canvas);
-      this.controls.target.set(
-        VIEWER_CONFIG.cameraTarget.x,
-        VIEWER_CONFIG.cameraTarget.y,
-        VIEWER_CONFIG.cameraTarget.z
-      );
-      this.controls.enableDamping = CONTROLS_CONFIG.enableDamping;
-      this.controls.dampingFactor = CONTROLS_CONFIG.dampingFactor;
-      this.controls.minDistance = CONTROLS_CONFIG.minDistance;
-      this.controls.maxDistance = CONTROLS_CONFIG.maxDistance;
-      this.controls.maxPolarAngle = CONTROLS_CONFIG.maxPolarAngle;
-      this.controls.update();
-
-      // Add event listener for camera rest (culling update)
-      this.controls.addEventListener('end', () => {
-        this.fragmentsService.updateCulling().catch(console.error);
-      });
-
-      // Add basic lighting
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-      this.scene.add(ambientLight);
-
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-      directionalLight.position.set(10, 10, 5);
-      this.scene.add(directionalLight);
-
-      // Add grid helper if enabled
-      if (VIEWER_CONFIG.showGrid) {
-        this.gridHelper = new THREE.GridHelper(50, 50, 0x444444, 0x222222);
-        this.scene.add(this.gridHelper);
+      this.initializeCamera(canvas);
+      
+      // Initialize controls
+      this.initializeControls(canvas);
+      
+      // Add lighting
+      this.initializeLighting();
+      
+      // Add grid if enabled
+      if (config.showGrid) {
+        this.addGrid(config.gridSize, config.gridDivisions);
       }
 
-      // Initialize stats
-      if (VIEWER_CONFIG.showStats) {
-        this.initStats();
+      // Initialize stats if enabled
+      if (config.showStats) {
+        this.initializeStats();
       }
 
       // Setup resize observer
@@ -151,22 +170,153 @@ export class IfcViewerComponent {
       this.updateSize();
       this.renderer.render(this.scene, this.camera);
 
-      console.log('IFC Viewer initialized successfully');
+      // Start animation loop
+      this.ngZone.runOutsideAngular(() => this.animate());
+
+      console.log('✅ IFC Viewer initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize viewer:', error);
+      console.error('❌ Failed to initialize viewer:', error);
+      throw error;
     }
   }
 
   /**
-   * Initialize stats.js for memory monitoring
+   * Initialize WebGL renderer
    */
-  private initStats(): void {
+  private initializeRenderer(canvas: HTMLCanvasElement): void {
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: RENDERER_CONFIG.antialias,
+      alpha: RENDERER_CONFIG.alpha,
+      preserveDrawingBuffer: RENDERER_CONFIG.preserveDrawingBuffer,
+      powerPreference: RENDERER_CONFIG.powerPreference,
+    });
+
+    // Modern rendering settings
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = RENDERER_CONFIG.toneMapping.exposure;
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio, RENDERER_CONFIG.maxPixelRatio)
+    );
+
+    console.log('✓ Renderer initialized');
+  }
+
+  /**
+   * Initialize Three.js scene
+   */
+  private initializeScene(): void {
+    const config = this.configService.config;
+    
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(config.backgroundColor);
+
+    console.log('✓ Scene initialized');
+  }
+
+  /**
+   * Initialize camera
+   */
+  private initializeCamera(canvas: HTMLCanvasElement): void {
+    const config = this.configService.config;
+    const aspect = canvas.clientWidth / canvas.clientHeight;
+
+    this.camera = new THREE.PerspectiveCamera(
+      CAMERA_CONFIG.fov,
+      aspect,
+      CAMERA_CONFIG.near,
+      CAMERA_CONFIG.far
+    );
+
+    this.camera.position.set(
+      config.cameraPosition.x,
+      config.cameraPosition.y,
+      config.cameraPosition.z
+    );
+
+    console.log('✓ Camera initialized');
+  }
+
+  /**
+   * Initialize orbit controls
+   */
+  private initializeControls(canvas: HTMLCanvasElement): void {
+    const config = this.configService.config;
+    
+    this.controls = new OrbitControls(this.camera, canvas);
+    this.controls.target.set(
+      config.cameraTarget.x,
+      config.cameraTarget.y,
+      config.cameraTarget.z
+    );
+    
+    // Apply control settings
+    this.controls.enableDamping = CONTROLS_CONFIG.enableDamping;
+    this.controls.dampingFactor = CONTROLS_CONFIG.dampingFactor;
+    this.controls.minDistance = CONTROLS_CONFIG.minDistance;
+    this.controls.maxDistance = CONTROLS_CONFIG.maxDistance;
+    this.controls.maxPolarAngle = CONTROLS_CONFIG.maxPolarAngle;
+    this.controls.enablePan = CONTROLS_CONFIG.enablePan;
+    this.controls.enableZoom = CONTROLS_CONFIG.enableZoom;
+    this.controls.enableRotate = CONTROLS_CONFIG.enableRotate;
+    this.controls.update();
+
+    // Add camera rest event for culling updates
+    this.controls.addEventListener('end', () => {
+      this.fragmentsService.updateCulling().catch(console.error);
+    });
+
+    console.log('✓ Controls initialized');
+  }
+
+  /**
+   * Initialize lighting
+   */
+  private initializeLighting(): void {
+    // Ambient light
+    const ambientLight = new THREE.AmbientLight(
+      LIGHTING_CONFIG.ambient.color,
+      LIGHTING_CONFIG.ambient.intensity
+    );
+    this.scene.add(ambientLight);
+
+    // Directional light
+    const directionalLight = new THREE.DirectionalLight(
+      LIGHTING_CONFIG.directional.color,
+      LIGHTING_CONFIG.directional.intensity
+    );
+    directionalLight.position.set(
+      LIGHTING_CONFIG.directional.position.x,
+      LIGHTING_CONFIG.directional.position.y,
+      LIGHTING_CONFIG.directional.position.z
+    );
+    this.scene.add(directionalLight);
+
+    console.log('✓ Lighting initialized');
+  }
+
+  /**
+   * Add grid helper to scene
+   */
+  private addGrid(size?: number, divisions?: number): void {
+    this.gridHelper = createStyledGrid(size, divisions);
+    this.scene.add(this.gridHelper);
+    console.log('✓ Grid added');
+  }
+
+  /**
+   * Initialize stats.js for performance monitoring
+   */
+  private initializeStats(): void {
     this.stats = new Stats();
-    this.stats.showPanel(2); // 2 = MB memory panel
+    this.stats.showPanel(2); // Memory panel
     this.stats.dom.style.position = 'absolute';
     this.stats.dom.style.left = '0px';
     this.stats.dom.style.top = '0px';
+    this.stats.dom.style.zIndex = '1000';
     document.body.appendChild(this.stats.dom);
+    console.log('✓ Stats initialized');
   }
 
   /**
@@ -179,6 +329,7 @@ export class IfcViewerComponent {
       });
     });
     this.resizeObserver.observe(canvas);
+    console.log('✓ Resize observer setup');
   }
 
   /**
@@ -197,39 +348,66 @@ export class IfcViewerComponent {
   }
 
   /**
+   * Update visual settings based on configuration
+   */
+  private updateVisualSettings(config: any): void {
+    if (this.scene) {
+      this.scene.background = new THREE.Color(config.backgroundColor);
+    }
+
+    // Update grid visibility
+    if (this.gridHelper) {
+      this.gridHelper.visible = config.showGrid ?? true;
+    }
+
+    // Update stats visibility
+    if (this.stats) {
+      this.stats.dom.style.display = config.showStats ? 'block' : 'none';
+    }
+  }
+
+  /**
    * Animation loop
    */
   private animate(): void {
     this.animationFrameId = requestAnimationFrame(() => this.animate());
 
-    // Stats begin
     this.stats?.begin();
-
-    // Update controls
     this.controls.update();
-
-    // Render scene
     this.renderer.render(this.scene, this.camera);
-
-    // Stats end
     this.stats?.end();
   }
 
   /**
-   * Handle file selection
+   * Handle file selection from input
    */
   async onFileSelected(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
 
-    if (!file || !file.name.toLowerCase().endsWith('.ifc')) {
-      console.error('Please select a valid .ifc file');
+    if (!file) {
       return;
     }
 
+    // Validate file
+    const validation = validateIfcFile(file);
+    if (!validation.valid) {
+      this.errorMessage.set(validation.error || 'Invalid file');
+      this.errorHandler.handleError(validation.error, ErrorSeverity.WARNING, {
+        operation: 'fileValidation',
+        fileName: file.name,
+      });
+      input.value = '';
+      return;
+    }
+
+    // Clear previous error
+    this.errorMessage.set(null);
+
+    // Load the file
     await this.loadIfcFile(file);
 
-    // Reset input so the same file can be selected again
+    // Reset input
     input.value = '';
   }
 
@@ -239,112 +417,124 @@ export class IfcViewerComponent {
   private async loadIfcFile(file: File): Promise<void> {
     this.isLoading.set(true);
 
-    const modelState: ModelState = {
+    const modelState: IFCModelState = {
       id: crypto.randomUUID(),
-      name: file.name.replace('.ifc', ''),
-      loading: true,
+      name: sanitizeFileName(file.name.replace('.ifc', '')),
+      status: ModelLoadingStatus.LOADING,
       progress: 0,
+      fileSize: file.size,
     };
 
     this.currentModel.set(modelState);
 
     try {
+      console.log(`📂 Loading IFC file: ${file.name} (${formatBytes(file.size)})`);
+
       // Read file as array buffer
       const arrayBuffer = await file.arrayBuffer();
       const buffer = new Uint8Array(arrayBuffer);
 
-      console.log(`Loading IFC file: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-
-      // Load IFC without progress tracking (due to ThatOpen Components library limitations)
-      // Progress will jump from 0% to 100% when complete
+      // Load IFC with progress tracking
       const uuid = await this.fragmentsService.loadIfc(
         buffer,
-        modelState.name
-        // Progress callback omitted due to internal library issues with callbacks
+        modelState.name,
+        (progress) => {
+          this.ngZone.run(() => {
+            this.currentModel.update((state) =>
+              state ? { ...state, progress } : state
+            );
+          });
+        }
       );
 
-      // Update progress to 100% in Angular zone
+      // Update state: mark as processing
       this.ngZone.run(() => {
         this.currentModel.update((state) =>
-          state ? { ...state, progress: 100 } : state
+          state
+            ? { ...state, status: ModelLoadingStatus.PROCESSING, progress: 100 }
+            : state
         );
       });
 
-      // Get the loaded model (FragmentsModel)
+      // Get the loaded model
       const model = this.fragmentsService.getModel(uuid);
       if (!model) {
-        throw new Error('Failed to retrieve loaded model');
+        throw new Error('Failed to retrieve loaded model from service');
       }
 
-      console.log('✅ Retrieved FragmentsModel from service');
-      console.log('Model type:', model.constructor.name);
-      console.log('Model has', model.items?.size || 0, 'fragments');
+      console.log('✅ Model loaded successfully');
 
-      // DEBUG: Check what's in the scene
-      console.log('🔍 Scene state after model load:');
-      console.log('  Scene children count:', this.scene.children.length);
-      
-      // Count different types of objects in scene
-      let meshCount = 0;
-      let lightCount = 0;
-      let helperCount = 0;
-      let otherCount = 0;
-      
-      this.scene.children.forEach((child) => {
-        if (child.type.includes('Light')) lightCount++;
-        else if (child.type.includes('Helper') || child.type.includes('Grid')) helperCount++;
-        else if (child.type.includes('Mesh') || child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) meshCount++;
-        else otherCount++;
-      });
-      
-      console.log(`  Meshes: ${meshCount}, Lights: ${lightCount}, Helpers: ${helperCount}, Other: ${otherCount}`);
+      // Fix materials
+      const fixed = this.fixSceneMaterials();
+      console.log(`✓ Fixed ${fixed} materials`);
 
-      // FIX: Ensure all materials in meshes are visible and properly configured
-      this.fixSceneMaterials();
-
-      // Center camera on all scene meshes
+      // Center camera on model
       this.centerCameraOnScene();
 
-      // DIAGNOSTIC: Add visual helpers (optional, can be disabled in VIEWER_CONFIG)
-      if (VIEWER_CONFIG.showBoundingBoxHelper || VIEWER_CONFIG.showAxesHelper) {
+      // Add visual helpers if enabled
+      const config = this.configService.config;
+      if (config.showBoundingBoxHelper || config.showAxesHelper) {
         this.addSceneHelpers();
       }
 
       // Bind camera for culling
       this.fragmentsService.bindCamera(this.camera);
 
-      // Update model state - mark as fully loaded
+      // Get model statistics
+      const stats = this.fragmentsService.getModelStatistics(uuid);
+
+      // Update state: mark as fully loaded
       this.ngZone.run(() => {
         this.currentModel.update((state) =>
           state
             ? {
                 ...state,
-                loading: false,
-                progress: 100,
+                status: ModelLoadingStatus.LOADED,
                 fragmentUuid: uuid,
+                loadedAt: new Date(),
+                stats,
               }
             : state
         );
       });
 
-      console.log(`IFC file loaded successfully: ${file.name}`);
+      console.log(`✅ Successfully loaded: ${file.name}`);
+      if (stats) {
+        console.log(`📊 Model stats:`, {
+          fragments: stats.fragmentCount,
+          meshes: stats.meshCount,
+          vertices: stats.vertexCount,
+          faces: stats.faceCount,
+          memory: stats.memoryUsage ? `${stats.memoryUsage.toFixed(2)} MB` : 'N/A',
+        });
+      }
     } catch (error) {
-      console.error('Failed to load IFC file:', error);
-      
-      // Run in Angular zone to ensure change detection
+      console.error('❌ Failed to load IFC file:', error);
+
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
       this.ngZone.run(() => {
         this.currentModel.update((state) =>
           state
             ? {
                 ...state,
-                loading: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
+                status: ModelLoadingStatus.FAILED,
+                error: {
+                  message: errorMessage,
+                  timestamp: new Date(),
+                },
               }
             : state
         );
+        this.errorMessage.set(errorMessage);
+      });
+
+      this.errorHandler.handleError(error, ErrorSeverity.ERROR, {
+        operation: 'loadIfcFile',
+        fileName: file.name,
+        fileSize: file.size,
       });
     } finally {
-      // Ensure loading state is reset in Angular zone
       this.ngZone.run(() => {
         this.isLoading.set(false);
       });
@@ -352,155 +542,46 @@ export class IfcViewerComponent {
   }
 
   /**
-   * FIX: Fix material visibility issues
-   * Ensures all materials in the scene are properly configured for rendering
+   * Fix material visibility issues in the scene
    */
-  private fixSceneMaterials(): void {
-    console.group('🔧 Fixing Scene Materials');
-    
-    let materialsFixed = 0;
-    let meshesProcessed = 0;
-
-    this.scene.traverse((child) => {
-      if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
-        meshesProcessed++;
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        
-        materials.forEach((material) => {
-          if (material) {
-            // Store original state for logging
-            const wasVisible = material.visible;
-            const originalSide = material.side;
-            const hadOpacity = material.opacity;
-
-            // Fix common material issues
-            material.visible = true;
-            material.side = THREE.DoubleSide; // Render both sides
-            material.needsUpdate = true;
-
-            // Ensure opacity is set correctly
-            if (material.transparent && material.opacity === 0) {
-              material.opacity = 1.0;
-              material.transparent = false;
-            }
-
-            // For MeshStandardMaterial or MeshPhysicalMaterial, ensure proper lighting response
-            if ('metalness' in material) {
-              // If metalness and roughness are both 0, object might appear black
-              if (material.metalness === 0 && material.roughness === 0) {
-                material.roughness = 0.5;
-              }
-            }
-
-            // Ensure the material has a color (avoid pure black unless intentional)
-            if ('color' in material && material.color) {
-              const color = material.color as THREE.Color;
-              // If color is too dark, lighten it slightly
-              if (color.r < 0.1 && color.g < 0.1 && color.b < 0.1) {
-                console.log('Dark material detected, lightening:', color);
-                color.setRGB(0.7, 0.7, 0.7);
-              }
-            }
-
-            if (!wasVisible || originalSide !== THREE.DoubleSide || hadOpacity === 0) {
-              materialsFixed++;
-            }
-          }
-        });
-
-        // Ensure the mesh itself is visible
-        child.visible = true;
-        child.frustumCulled = true; // Enable frustum culling for performance
-      }
-    });
-
-    console.log(`✓ Processed ${meshesProcessed} meshes, fixed ${materialsFixed} materials`);
-    console.groupEnd();
-  }
-
-  /**
-   * DIAGNOSTIC: Add visual helpers to understand scene bounds and orientation
-   */
-  private addSceneHelpers(): void {
-    console.log('🔧 Adding visual helpers for scene');
-
-    // Calculate bounding box of all meshes in scene
-    const bbox = new THREE.Box3();
-    let hasMeshes = false;
-    
-    this.scene.traverse((child) => {
-      if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
-        // Skip helpers and grids
-        if (!child.name.includes('Helper') && child.type !== 'GridHelper') {
-          bbox.expandByObject(child);
-          hasMeshes = true;
-        }
-      }
-    });
-
-    if (!hasMeshes) {
-      console.warn('⚠️ No meshes found in scene to create helpers for');
-      return;
-    }
-
-    const center = bbox.getCenter(new THREE.Vector3());
-    const size = bbox.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-
-    console.log('Scene bounding box:', {
-      min: bbox.min,
-      max: bbox.max,
-      center,
-      size,
-      maxDim,
-    });
-
-    const helpers: string[] = [];
-
-    // Add bounding box helper if enabled
-    if (VIEWER_CONFIG.showBoundingBoxHelper) {
-      const boxHelper = new THREE.Box3Helper(bbox, new THREE.Color(0x00ff00));
-      boxHelper.name = 'BoundingBoxHelper';
-      this.scene.add(boxHelper);
-      helpers.push('bounding box (green)');
-    }
-
-    // Add axes helper if enabled
-    if (VIEWER_CONFIG.showAxesHelper) {
-      const axesHelper = new THREE.AxesHelper(maxDim * 0.5);
-      axesHelper.position.copy(center);
-      axesHelper.name = 'AxesHelper';
-      this.scene.add(axesHelper);
-      helpers.push('axes helper');
-    }
-
-    if (helpers.length > 0) {
-      console.log(`✅ Added ${helpers.join(' and ')} at scene center`);
-    }
+  private fixSceneMaterials(): number {
+    return fixMaterials(this.scene);
   }
 
   /**
    * Center camera on all meshes in the scene
    */
   private centerCameraOnScene(): void {
-    console.log('🎥 Centering camera on scene meshes');
-    
-    // Calculate bounding box of all meshes
-    const bbox = new THREE.Box3();
-    let hasMeshes = false;
-    
-    this.scene.traverse((child) => {
-      if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
-        // Skip helpers and grids
-        if (!child.name.includes('Helper') && child.type !== 'GridHelper') {
-          bbox.expandByObject(child);
-          hasMeshes = true;
-        }
-      }
-    });
+    console.log('🎥 Centering camera on scene');
 
-    if (!hasMeshes) {
-      console.warn('⚠️ No meshes found in scene, using default camera position');
+    const bbox = calculateBoundingBox(this.scene);
+    
+    if (!bbox || bbox.isEmpty()) {
+      console.warn('⚠️ No geometry found, using default camera position');
+      return;
+    }
+
+    const cameraPos = calculateCameraPosition(
+      this.scene,
+      this.camera,
+      CAMERA_CONFIG.fitPadding
+    );
+
+    this.camera.position.copy(cameraPos.position);
+    this.controls.target.copy(cameraPos.target);
+    this.controls.update();
+
+    console.log('✓ Camera centered');
+  }
+
+  /**
+   * Add visual helpers to the scene
+   */
+  private addSceneHelpers(): void {
+    const config = this.configService.config;
+    const bbox = calculateBoundingBox(this.scene);
+
+    if (!bbox || bbox.isEmpty()) {
       return;
     }
 
@@ -508,29 +589,22 @@ export class IfcViewerComponent {
     const size = bbox.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
 
-    // Calculate camera distance to fit the entire model
-    const fov = this.camera.fov * (Math.PI / 180);
-    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-    cameraZ *= 1.5; // Add some padding
+    // Add bounding box helper
+    if (config.showBoundingBoxHelper) {
+      const boxHelper = new THREE.Box3Helper(bbox, new THREE.Color(0x00ff00));
+      boxHelper.name = 'BoundingBoxHelper';
+      this.scene.add(boxHelper);
+      console.log('✓ Added bounding box helper');
+    }
 
-    // Position camera at an angle to see the model nicely
-    this.camera.position.set(
-      center.x + cameraZ * 0.7,
-      center.y + cameraZ * 0.7,
-      center.z + cameraZ * 0.7
-    );
-    
-    this.controls.target.copy(center);
-    this.controls.update();
-
-    console.log('✅ Camera centered:', {
-      position: this.camera.position,
-      target: center,
-      distance: this.camera.position.distanceTo(center),
-    });
-
-    // Update culling after camera movement
-    this.fragmentsService.updateCulling().catch(console.error);
+    // Add axes helper
+    if (config.showAxesHelper) {
+      const axesHelper = new THREE.AxesHelper(maxDim * 0.5);
+      axesHelper.position.copy(center);
+      axesHelper.name = 'AxesHelper';
+      this.scene.add(axesHelper);
+      console.log('✓ Added axes helper');
+    }
   }
 
   /**
@@ -539,19 +613,21 @@ export class IfcViewerComponent {
   async downloadFragment(): Promise<void> {
     const model = this.currentModel();
     if (!model?.fragmentUuid) {
-      console.error('No model loaded');
+      console.warn('No model loaded to export');
       return;
     }
 
     try {
-      const buffer = await this.fragmentsService.exportFragment(model.fragmentUuid);
-      if (!buffer) {
-        throw new Error('Failed to export fragment');
+      console.log('📤 Exporting fragment...');
+
+      const result = await this.fragmentsService.exportFragment(model.fragmentUuid);
+
+      if (!result.success || !result.data) {
+        throw new Error(result.error || 'Export failed');
       }
 
       // Create blob and download
-      const arrayBuffer = new Uint8Array(buffer).buffer as ArrayBuffer;
-      const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+      const blob = new Blob([result.data], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -561,9 +637,14 @@ export class IfcViewerComponent {
       // Cleanup
       URL.revokeObjectURL(url);
 
-      console.log(`Fragment exported: ${model.name}.frag`);
+      console.log(`✅ Fragment exported: ${model.name}.frag (${formatBytes(result.fileSize || 0)})`);
     } catch (error) {
-      console.error('Failed to download fragment:', error);
+      console.error('❌ Failed to export fragment:', error);
+      this.errorHandler.handleError(error, ErrorSeverity.ERROR, {
+        operation: 'downloadFragment',
+        modelId: model.fragmentUuid,
+      });
+      this.errorMessage.set('Failed to export fragment');
     }
   }
 
@@ -579,6 +660,8 @@ export class IfcViewerComponent {
    */
   ngOnDestroy(): void {
     try {
+      console.log('🗑️ Cleaning up IFC Viewer...');
+
       // Cancel animation frame
       if (this.animationFrameId) {
         cancelAnimationFrame(this.animationFrameId);
@@ -600,16 +683,9 @@ export class IfcViewerComponent {
       }
 
       // Dispose scene objects
-      this.scene?.traverse((object) => {
-        if (object instanceof THREE.Mesh) {
-          object.geometry?.dispose();
-          if (Array.isArray(object.material)) {
-            object.material.forEach((material) => material.dispose());
-          } else {
-            object.material?.dispose();
-          }
-        }
-      });
+      if (this.scene) {
+        disposeObject(this.scene);
+      }
 
       // Dispose renderer
       if (this.renderer) {
@@ -620,10 +696,9 @@ export class IfcViewerComponent {
       // Dispose fragments service
       this.fragmentsService.dispose().catch(console.error);
 
-      console.log('IFC Viewer disposed successfully');
+      console.log('✅ IFC Viewer disposed');
     } catch (error) {
-      console.error('Error during viewer disposal:', error);
+      console.error('❌ Error during viewer disposal:', error);
     }
   }
 }
-

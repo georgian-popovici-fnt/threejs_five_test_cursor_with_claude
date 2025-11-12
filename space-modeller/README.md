@@ -1,297 +1,322 @@
-# IFC Viewer - Production-Ready 3D Viewer
+# Space Modeller - IFC Viewer
 
-A high-quality, production-ready 3D viewer for IFC files using **Three.js** and **@thatopen/components**.
+A professional-grade IFC (Industry Foundation Classes) model viewer built with Angular 18, Three.js, and ThatOpen Components. This application provides a modern, performant, and user-friendly interface for loading, viewing, and exporting IFC building models.
 
 ## 🚀 Features
 
-- **IFC Loading**: Load and visualize Industry Foundation Classes (IFC) files
-- **Fragment Export**: Export models as optimized `.frag` files
-- **Performance**: Modern Three.js setup with sRGB color space and ACES tone mapping
-- **Memory Monitoring**: Real-time memory usage display with stats.js
-- **Responsive**: Full-viewport 3D canvas that adapts to any screen size
-- **Accessible**: ARIA labels and keyboard-friendly controls
-- **Resource Management**: Robust cleanup and disposal to prevent memory leaks
+### Core Features
+- **IFC File Loading**: Import IFC files with real-time progress tracking
+- **3D Visualization**: High-quality rendering with Three.js and WebGL
+- **Orbit Controls**: Intuitive camera navigation with pan, zoom, and rotate
+- **Fragment Export**: Export loaded models as optimized .frag files
+- **Performance Monitoring**: Built-in stats for FPS and memory usage
+- **Error Handling**: Comprehensive error handling with user-friendly messages
 
-## 🛠️ Tech Stack
+### Technical Features
+- **Angular 18**: Modern standalone components with OnPush change detection
+- **Reactive State**: Signal-based state management for optimal performance
+- **Type Safety**: Full TypeScript coverage with strict mode
+- **Accessibility**: ARIA labels and keyboard navigation support
+- **Responsive Design**: Works on desktop, tablet, and mobile devices
+- **Production Ready**: Optimized build with tree-shaking and lazy loading
 
-- **Angular 18** with standalone components and OnPush change detection
-- **Three.js 0.180** for WebGL rendering
-- **@thatopen/components** for IFC processing
-- **web-ifc** WASM library for IFC parsing
-- **stats.js** for performance monitoring
-- **TypeScript 5.5** with strict typing
+## 📋 Prerequisites
 
-## 📦 Installation
+- **Node.js**: v18.x or higher
+- **npm**: v9.x or higher
+- **Modern Browser**: Chrome, Firefox, Safari, or Edge (latest versions)
 
-```bash
-cd space-modeller
-npm install
-```
+## 🛠️ Installation
 
-## 🎮 Usage
+1. **Clone the repository**:
+   ```bash
+   cd space-modeller
+   ```
 
-### Development Server
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
 
+3. **Setup WASM files** (automatic):
+   ```bash
+   npm run setup:wasm
+   ```
+   This copies required WASM files from node_modules to the public folder.
+
+## 🚀 Development
+
+### Start Development Server
 ```bash
 npm start
 ```
+The application will be available at `http://localhost:4200`
 
-The WASM files will be automatically copied to `public/wasm/` before starting the dev server.
+### Watch Mode
+```bash
+npm run watch
+```
+Automatically rebuilds on file changes.
 
-Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+### Run Tests
+```bash
+npm test
+```
 
-### Production Build
+## 🏗️ Production Build
 
 ```bash
 npm run build
 ```
+Production-optimized build will be in `dist/space-modeller/browser/`
 
-The build artifacts will be stored in the `dist/` directory.
+### Build Output
+- Minified and tree-shaken JavaScript
+- Optimized CSS
+- WASM files included
+- Source maps for debugging
 
-## 🔧 Configuration
+## 📁 Project Structure
 
-### WASM Path Configuration
-
-The viewer supports two WASM loading modes:
-
-**1. Local WASM (Recommended for Production)**
-
-Default configuration in `src/app/shared/constants/viewer.constants.ts`:
-
-```typescript
-wasmPath: '/wasm/',
+```
+space-modeller/
+├── src/
+│   ├── app/
+│   │   ├── core/                    # Core services
+│   │   │   └── services/
+│   │   │       ├── config.service.ts       # Configuration management
+│   │   │       ├── error-handler.service.ts # Error handling
+│   │   │       └── fragments.service.ts     # IFC/Fragment management
+│   │   ├── features/                # Feature modules
+│   │   │   └── ifc-viewer/
+│   │   │       ├── ifc-viewer.component.ts
+│   │   │       ├── ifc-viewer.component.html
+│   │   │       └── ifc-viewer.component.css
+│   │   ├── shared/                  # Shared code
+│   │   │   ├── constants/           # Application constants
+│   │   │   ├── models/              # TypeScript interfaces
+│   │   │   └── utils/               # Utility functions
+│   │   ├── app.component.ts
+│   │   ├── app.config.ts           # Application configuration
+│   │   └── app.routes.ts           # Routing configuration
+│   ├── environments/               # Environment configs
+│   ├── index.html
+│   ├── main.ts                     # Application entry point
+│   └── styles.css                  # Global styles
+├── public/                         # Static assets
+│   ├── wasm/                      # WebAssembly files
+│   └── worker.mjs                 # Fragments worker
+├── scripts/
+│   └── copy-wasm.js               # WASM setup script
+├── angular.json                   # Angular CLI configuration
+├── tsconfig.json                  # TypeScript configuration
+└── package.json
 ```
 
-WASM files are automatically copied from `node_modules/web-ifc/` to `public/wasm/` via the `setup:wasm` script.
+## 🎯 Usage
 
-**2. CDN WASM (Quick Development)**
+### Loading IFC Files
 
-Alternative configuration:
+1. Click the **"Import IFC"** button
+2. Select an IFC file from your computer
+3. Wait for the model to load (progress bar shown)
+4. View and interact with the 3D model
 
-```typescript
-wasmPath: 'https://unpkg.com/web-ifc@0.0.66/',
-```
+### Navigation Controls
 
-This loads WASM files from unpkg CDN (requires internet connection).
+- **Left Mouse**: Rotate camera around model
+- **Right Mouse**: Pan camera
+- **Mouse Wheel**: Zoom in/out
+- **Touch**: Pinch to zoom, drag to rotate/pan
 
-### Viewer Settings
+### Exporting Models
 
-Customize viewer behavior in `src/app/shared/constants/viewer.constants.ts`:
+1. Load an IFC model
+2. Click **"Download .frag"** button
+3. Optimized fragment file will download
+
+## ⚙️ Configuration
+
+### Viewer Configuration
+
+Edit `src/app/shared/constants/viewer.constants.ts`:
 
 ```typescript
 export const VIEWER_CONFIG: ViewerConfig = {
-  wasmPath: '/wasm/',
+  wasmPath: '/wasm/',              // WASM files location
   cameraPosition: { x: 10, y: 10, z: 10 },
   cameraTarget: { x: 0, y: 0, z: 0 },
-  backgroundColor: '#0e1013',
-  showGrid: true,
-  showStats: true,
+  backgroundColor: '#0e1013',      // Dark background
+  showGrid: true,                  // Show ground grid
+  showStats: true,                 // Show FPS/memory stats
+  showBoundingBoxHelper: true,     // Green bounding box
+  showAxesHelper: true,            // RGB axes
+  maxFileSizeMB: 500,             // Max file size
 };
-
-// Worker URL for FragmentsManager (served locally to avoid CORS issues)
-export const FRAGMENTS_WORKER_URL = '/worker.mjs';
 ```
 
-## 📋 How to Use the Viewer
+### Environment Configuration
 
-1. **Import IFC File**
-   - Click "Import IFC" button in the toolbar
-   - Select an `.ifc` file from your computer
-   - Wait for the loading progress to complete
-
-2. **View the Model**
-   - Use mouse to rotate, pan, and zoom:
-     - **Left Click + Drag**: Rotate camera
-     - **Right Click + Drag**: Pan camera
-     - **Scroll Wheel**: Zoom in/out
-
-3. **Export as Fragment**
-   - Once a model is loaded, click "Download .frag"
-   - The optimized fragment file will be saved to your downloads
+- **Development**: `src/environments/environment.ts`
+- **Production**: `src/environments/environment.prod.ts`
 
 ## 🏗️ Architecture
 
-### Component Structure
+### Services
 
-```
-src/app/
-├── core/
-│   └── services/
-│       └── fragments.service.ts       # ThatOpen components manager
-├── features/
-│   └── ifc-viewer/
-│       ├── ifc-viewer.component.ts    # Main viewer component
-│       ├── ifc-viewer.component.html  # Viewer template
-│       └── ifc-viewer.component.css   # Viewer styles
-└── shared/
-    ├── constants/
-    │   └── viewer.constants.ts        # Configuration constants
-    └── models/
-        └── viewer.model.ts            # TypeScript interfaces
-```
-
-### Key Components
-
-#### FragmentsService
-
-Manages ThatOpen Components lifecycle:
-- Initializes `FragmentsManager` and `IfcLoader`
-- Handles IFC loading with progress tracking
-- Exports models as fragments
-- Provides camera binding for culling
-- Ensures proper resource disposal
-
-#### IfcViewerComponent
-
-Main viewer component following Angular best practices:
-- Standalone component with OnPush change detection
-- Runs Three.js render loop outside Angular zone
-- Uses signals for reactive state management
-- Implements comprehensive resource cleanup
-- ResizeObserver for responsive canvas
-
-## 🎨 Rendering Configuration
-
-### Three.js Setup
+#### ConfigService
+Manages application configuration with reactive updates.
 
 ```typescript
-// Modern color space and tone mapping
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
-
-// Pixel ratio capped at 2 for performance
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+constructor(private config: ConfigService) {
+  this.config.config$.subscribe(config => {
+    // React to configuration changes
+  });
+}
 ```
 
-### Camera & Controls
+#### FragmentsService
+Handles IFC loading and fragment management.
 
-- **Field of View**: 60°
-- **OrbitControls** with damping
-- **Auto-framing**: Camera automatically centers on loaded models
-- **Culling Updates**: Triggered after camera movement stops
+```typescript
+// Initialize
+await this.fragmentsService.initialize(scene, camera);
 
-## 🔒 Resource Management
+// Load IFC
+const uuid = await this.fragmentsService.loadIfc(buffer, 'model-name', (progress) => {
+  console.log(`Progress: ${progress}%`);
+});
 
-The viewer implements robust resource cleanup:
+// Get model
+const model = this.fragmentsService.getModel(uuid);
+```
 
-### Component Disposal (ngOnDestroy)
+#### ErrorHandlerService
+Centralized error handling and logging.
 
-1. Cancel animation frame
-2. Remove stats.js DOM element
-3. Dispose OrbitControls
-4. Disconnect ResizeObserver
-5. Dispose Three.js geometries and materials
-6. Dispose WebGL renderer
-7. Dispose FragmentsService and workers
+```typescript
+this.errorHandler.handleError(error, ErrorSeverity.ERROR, {
+  operation: 'loadModel',
+  modelId: 'abc123',
+});
+```
 
-### Memory Leak Prevention
+### State Management
 
-- All subscriptions use `takeUntilDestroyed()`
-- Event listeners properly removed
-- WebGL context force lost on disposal
-- Fragment groups explicitly deleted
+Uses Angular Signals for reactive state:
 
-## 📊 Performance
-
-### Optimizations
-
-- **Instanced Rendering**: FragmentsManager uses InstancedMesh
-- **Frustum Culling**: Enabled for all fragments
-- **Pixel Ratio Cap**: Maximum 2x to balance quality and performance
-- **Render Loop**: Runs outside Angular zone to prevent change detection overhead
-- **Memory Monitoring**: stats.js panel shows real-time MB usage
-
-### Recommended Hardware
-
-- **Minimum**: Integrated GPU, 4GB RAM
-- **Recommended**: Dedicated GPU, 8GB+ RAM
-- Works on mid-range hardware for moderately large IFC files
+```typescript
+readonly currentModel = signal<IFCModelState | null>(null);
+readonly isLoading = signal<boolean>(false);
+readonly hasModel = computed(() => this.currentModel() !== null);
+```
 
 ## 🧪 Testing
 
-Run unit tests:
+### Unit Tests
 
 ```bash
 npm test
 ```
 
-## 📝 Development Guidelines
+Test files are located alongside their source files:
+- `*.component.spec.ts` for components
+- `*.service.spec.ts` for services
 
-This project follows strict Angular and Three.js conventions:
+### Test Coverage
 
-- **Standalone Components**: All components are standalone with explicit imports
-- **OnPush Change Detection**: Used everywhere for performance
-- **Zone Management**: Three.js render loop runs outside Angular zone
-- **No `any` Types**: Strict TypeScript with full typing
-- **RxJS Best Practices**: `takeUntilDestroyed` for subscriptions
-- **Resource Cleanup**: Comprehensive disposal in `ngOnDestroy`
+```bash
+npm test -- --code-coverage
+```
 
 ## 🐛 Troubleshooting
 
-### WASM Files Not Loading
+### Model Not Rendering
 
-**Problem**: Console errors about WASM files not found
+1. **Check Console**: Look for error messages in browser console
+2. **WASM Files**: Ensure WASM files are in `public/wasm/`
+3. **Worker**: Verify `worker.mjs` exists in `public/`
+4. **File Format**: Ensure file is valid IFC format
+5. **File Size**: Check file size is under 500MB
 
-**Solution**: Run `npm run setup:wasm` to copy WASM files to public folder
+### Performance Issues
 
-### Memory Warnings
+1. **Reduce Model Complexity**: Simplify IFC model if possible
+2. **Disable Helpers**: Turn off bounding box and axes helpers
+3. **Lower Pixel Ratio**: Reduce `maxPixelRatio` in renderer config
+4. **Check Memory**: Monitor memory usage in Stats panel
 
-**Problem**: Browser warns about high memory usage
+### CORS Issues
 
-**Solution**: 
-- Dispose previous models before loading new ones
-- Check stats.js panel for memory leaks
-- Ensure proper cleanup is happening
+When loading WASM or IFC files:
+1. Ensure files are served from same origin
+2. Check server CORS headers
+3. Use local files instead of remote URLs
 
-### Model Not Visible
+## 📦 Dependencies
 
-**Problem**: Model loads but nothing appears
+### Core
+- `@angular/core` v18.2.0 - Angular framework
+- `three` v0.180.0 - 3D graphics library
+- `rxjs` v7.8.0 - Reactive programming
 
-**Solution** (FIXED in latest version):
+### ThatOpen Components
+- `@thatopen/components` v3.2.3 - IFC processing
+- `@thatopen/components-front` v3.2.1 - Frontend utilities
+- `@thatopen/fragments` v3.2.4 - Fragment management
 
-The viewer now includes automatic fixes and diagnostics:
+### Utilities
+- `stats.js` v0.17.0 - Performance monitoring
+- `web-ifc` v0.0.72 - IFC parsing
 
-1. **Automatic Material Fixes**: Materials are automatically configured for visibility
-   - Forces `material.visible = true`
-   - Sets `material.side = THREE.DoubleSide` (renders both faces)
-   - Fixes transparent materials with 0 opacity
-   - Adjusts very dark materials that blend into background
-   - Fixes PBR parameters (metalness/roughness)
+## 🔒 Security
 
-2. **Visual Helpers**: After loading, you'll see:
-   - Green wireframe box showing model bounds
-   - RGB axes helper at model center (Red=X, Green=Y, Blue=Z)
+- **File Validation**: Validates file type and size before loading
+- **Error Handling**: Prevents exposure of sensitive error details
+- **Content Security**: WASM files loaded from trusted sources
+- **Type Safety**: TypeScript prevents common security issues
 
-3. **Diagnostic Logging**: Check browser console for detailed info:
-   ```
-   🔍 Model Structure Inspection
-     - Mesh count, vertex count, face count
-     - Bounding box dimensions and position
-   🔧 Fixing Model Materials
-     - Number of materials fixed
-   ```
+## 🌐 Browser Support
 
-4. **If still not visible**:
-   - Open browser console (F12)
-   - Look for the diagnostic output after loading
-   - If `meshes: 0` → IFC file has no geometry
-   - If bounding box is extremely large/small → scale issue
-   - If you see green box but no model → check material logs
-
-See `IFC_RENDERING_FIXES.md` for detailed troubleshooting guide.
+- Chrome/Edge: ✅ Full support
+- Firefox: ✅ Full support
+- Safari: ✅ Full support (v14+)
+- Mobile: ✅ Limited (performance may vary)
 
 ## 📄 License
 
-MIT
+Copyright © 2024. All rights reserved.
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please follow the existing code style and conventions.
+This is a business application. For contribution guidelines, please contact the development team.
+
+## 📞 Support
+
+For issues, questions, or feature requests:
+- Check existing issues
+- Review documentation
+- Contact development team
+
+## 🗺️ Roadmap
+
+### Planned Features
+- [ ] Multiple model loading
+- [ ] Model comparison view
+- [ ] Property inspection panel
+- [ ] Measurement tools
+- [ ] Section cutting
+- [ ] Annotation system
+- [ ] Export to different formats
+- [ ] Cloud storage integration
 
 ## 📚 Additional Resources
 
+- [Angular Documentation](https://angular.dev)
 - [Three.js Documentation](https://threejs.org/docs/)
 - [ThatOpen Components](https://docs.thatopen.com/)
-- [Angular Documentation](https://angular.dev/)
-- [Web-IFC](https://github.com/tomvandig/web-ifc)
+- [IFC Specification](https://www.buildingsmart.org/standards/bsi-standards/industry-foundation-classes/)
+
+---
+
+**Built with ❤️ using Angular, Three.js, and ThatOpen Components**
