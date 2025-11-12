@@ -75,20 +75,31 @@ export const CAMERA_CONFIG = {
 
 /**
  * OrbitControls configuration
- * Smooth damping with reasonable limits
+ * Enhanced smooth damping with professional navigation feel
  */
 export const CONTROLS_CONFIG = {
   enableDamping: true,
-  dampingFactor: 0.05,
-  minDistance: 1,
+  dampingFactor: 0.08, // Slightly increased for smoother feel
+  minDistance: 0.5,
   maxDistance: 500,
-  maxPolarAngle: Math.PI * 0.95,
+  maxPolarAngle: Math.PI * 0.95, // Prevent camera going upside down
+  minPolarAngle: 0, // Allow looking from top
   enablePan: true,
   enableZoom: true,
   enableRotate: true,
-  zoomSpeed: 1.0,
-  rotateSpeed: 1.0,
+  zoomSpeed: 1.2, // Slightly faster zoom for better responsiveness
+  rotateSpeed: 0.8, // Slightly slower rotation for more precision
   panSpeed: 1.0,
+  screenSpacePanning: true, // Pan in screen space for more intuitive feel
+  mouseButtons: {
+    LEFT: 0,   // Rotate
+    MIDDLE: 1, // Pan
+    RIGHT: 2,  // Pan
+  },
+  touches: {
+    ONE: 0,    // Rotate with one finger
+    TWO: 2,    // Pan and zoom with two fingers
+  },
 } as const;
 
 /**

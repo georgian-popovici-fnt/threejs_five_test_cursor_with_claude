@@ -275,7 +275,7 @@ export class IfcViewerComponent {
   }
 
   /**
-   * Initialize orbit controls
+   * Initialize enhanced orbit controls
    */
   private initializeControls(canvas: HTMLCanvasElement): void {
     const config = this.configService.config;
@@ -287,15 +287,20 @@ export class IfcViewerComponent {
       config.cameraTarget.z
     );
     
-    // Apply control settings
+    // Apply enhanced control settings
     this.controls.enableDamping = CONTROLS_CONFIG.enableDamping;
     this.controls.dampingFactor = CONTROLS_CONFIG.dampingFactor;
     this.controls.minDistance = CONTROLS_CONFIG.minDistance;
     this.controls.maxDistance = CONTROLS_CONFIG.maxDistance;
     this.controls.maxPolarAngle = CONTROLS_CONFIG.maxPolarAngle;
+    this.controls.minPolarAngle = CONTROLS_CONFIG.minPolarAngle;
     this.controls.enablePan = CONTROLS_CONFIG.enablePan;
     this.controls.enableZoom = CONTROLS_CONFIG.enableZoom;
     this.controls.enableRotate = CONTROLS_CONFIG.enableRotate;
+    this.controls.zoomSpeed = CONTROLS_CONFIG.zoomSpeed;
+    this.controls.rotateSpeed = CONTROLS_CONFIG.rotateSpeed;
+    this.controls.panSpeed = CONTROLS_CONFIG.panSpeed;
+    this.controls.screenSpacePanning = CONTROLS_CONFIG.screenSpacePanning;
     this.controls.update();
 
     // Add camera rest event for culling updates
@@ -303,8 +308,76 @@ export class IfcViewerComponent {
       this.fragmentsService.updateCulling().catch(console.error);
     });
 
-    console.log('✓ Controls initialized');
+    // Setup enhanced cursor feedback
+    this.setupCursorFeedback(canvas);
+
+    console.log('✓ Enhanced controls initialized');
   }
+
+  /**
+   * Setup enhanced cursor feedback based on mouse interactions
+   */
+  private setupCursorFeedback(canvas: HTMLCanvasElement): void {
+    let isLeftMouseDown = false;
+    let isRightMouseDown = false;
+    let isMiddleMouseDown = false;
+
+    // Mouse down event - detect which button
+    canvas.addEventListener('mousedown', (event: MouseEvent) => {
+      if (event.button === 0) {
+        // Left mouse button - rotation
+        isLeftMouseDown = true;
+        canvas.classList.add('rotating');
+      } else if (event.button === 2) {
+        // Right mouse button - panning
+        isRightMouseDown = true;
+        canvas.classList.add('panning');
+      } else if (event.button === 1) {
+        // Middle mouse button - also panning
+        isMiddleMouseDown = true;
+        canvas.classList.add('panning');
+      }
+    });
+
+    // Mouse up event - remove classes
+    canvas.addEventListener('mouseup', (event: MouseEvent) => {
+      if (event.button === 0) {
+        isLeftMouseDown = false;
+        canvas.classList.remove('rotating');
+      } else if (event.button === 2) {
+        isRightMouseDown = false;
+        canvas.classList.remove('panning');
+      } else if (event.button === 1) {
+        isMiddleMouseDown = false;
+        canvas.classList.remove('panning');
+      }
+    });
+
+    // Mouse leave - cleanup all classes
+    canvas.addEventListener('mouseleave', () => {
+      isLeftMouseDown = false;
+      isRightMouseDown = false;
+      isMiddleMouseDown = false;
+      canvas.classList.remove('rotating', 'panning', 'zooming');
+    });
+
+    // Wheel event - show zoom cursor with smooth transition
+    canvas.addEventListener('wheel', () => {
+      canvas.classList.add('zooming');
+      
+      // Remove zoom cursor after a short delay
+      setTimeout(() => {
+        canvas.classList.remove('zooming');
+      }, 200);
+    }, { passive: true });
+
+    // Prevent context menu on right-click
+    canvas.addEventListener('contextmenu', (event: Event) => {
+      event.preventDefault();
+    });
+
+    console.log('✓ Enhanced cursor feedback initialized');
+  } 
 
   /**
    * Initialize lighting
