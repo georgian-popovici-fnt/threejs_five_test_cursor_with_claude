@@ -15,6 +15,8 @@ export class FragmentsService {
   private components: OBC.Components | null = null;
   private ifcLoader: OBC.IfcLoader | null = null;
   private fragmentsManager: OBC.FragmentsManager | null = null;
+  private scene: THREE.Scene | null = null;
+  private camera: THREE.Camera | null = null;
   private initialized = false;
 
   /**
@@ -30,9 +32,16 @@ export class FragmentsService {
     try {
       console.log('Initializing FragmentsService...');
       
+      // Store scene and camera references
+      this.scene = scene;
+      this.camera = camera;
+      console.log('Scene and camera stored in service');
+      
       // Initialize Components
+      // ThatOpen Components v3 works differently - it manages its own internal state
+      // We just need to create the Components instance and then manually add loaded models to our scene
       this.components = new OBC.Components();
-      console.log('Components created');
+      console.log('Components created (manages loading, we handle scene integration)');
 
       // Get FragmentsManager from components
       this.fragmentsManager = this.components.get(OBC.FragmentsManager);
@@ -157,8 +166,78 @@ export class FragmentsService {
       console.log(`Model "${name}" loaded successfully`);
       console.log('Model type:', model.constructor.name);
       console.log('Model ID:', model.modelId);
-      console.log('Model object:', model.object);
-      console.log('Model has', model.object?.children?.length || 0, 'children');
+      
+      // CRITICAL FIX: Add fragments to the scene
+      // In ThatOpen Components v3, the geometry is stored as Fragment objects
+      if (!this.scene) {
+        throw new Error('Scene is null, cannot add model');
+      }
+      
+      console.log('🔍 Adding model to scene...');
+      console.log('Model type:', model.constructor.name);
+      console.log('Model ID:', model.modelId);
+      
+      // The FragmentsModel contains Fragment objects that hold the actual geometry
+      // Each Fragment has meshes that need to be added to the scene
+      let addedMeshCount = 0;
+      let fragmentCount = 0;
+      
+      // Iterate through all fragments in the model
+      // model.items is a Map<string, Fragment>
+      if (model.items && model.items.size > 0) {
+        console.log(`Found ${model.items.size} fragments in model`);
+        
+        model.items.forEach((fragment, fragmentId) => {
+          fragmentCount++;
+          console.log(`Processing fragment ${fragmentCount}/${model.items.size}:`, fragmentId);
+          
+          // Each fragment has a mesh property that is a THREE.InstancedMesh or THREE.Mesh
+          if (fragment.mesh) {
+            console.log('  Fragment has mesh:', fragment.mesh.constructor.name);
+            console.log('  Mesh visible:', fragment.mesh.visible);
+            console.log('  Mesh vertex count:', fragment.mesh.geometry?.getAttribute('position')?.count || 0);
+            
+            // Add the mesh to the scene
+            if (!fragment.mesh.parent) {
+              this.scene.add(fragment.mesh);
+              fragment.mesh.visible = true;
+              fragment.mesh.frustumCulled = true;
+              addedMeshCount++;
+              console.log(`  ✅ Added fragment mesh to scene`);
+            } else {
+              console.log(`  ⚠️ Fragment mesh already has parent:`, fragment.mesh.parent.name || fragment.mesh.parent.type);
+            }
+          } else {
+            console.warn(`  ⚠️ Fragment ${fragmentId} has no mesh property`);
+          }
+        });
+        
+        console.log(`✅ Successfully added ${addedMeshCount}/${fragmentCount} fragment meshes to scene`);
+      } else {
+        console.warn('⚠️ Model has no fragments (model.items is empty or undefined)');
+        console.log('Model.items:', model.items);
+        
+        // Fallback: try adding model.object if it exists
+        if (model.object) {
+          console.log('Attempting fallback: adding model.object to scene');
+          if (!model.object.parent) {
+            this.scene.add(model.object);
+            console.log('✅ Added model.object to scene (fallback)');
+          }
+        }
+      }
+      
+      // Additional check: ensure model is visible in the scene
+      if (addedMeshCount === 0) {
+        console.error('❌ ERROR: No meshes were added to the scene!');
+        console.error('This indicates a problem with the model structure or library version.');
+        console.error('Model structure:', {
+          hasItems: !!model.items,
+          itemsSize: model.items?.size,
+          hasObject: !!model.object,
+          objectChildren: model.object?.children?.length,
+        });
+      }
       
       // Report 100% progress (we only get start and end, no intermediate updates)
       onProgress?.(100);

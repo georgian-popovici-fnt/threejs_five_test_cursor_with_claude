@@ -276,28 +276,42 @@ export class IfcViewerComponent {
         throw new Error('Failed to retrieve loaded model');
       }
 
-      console.log('Retrieved FragmentsModel from service:', model);
+      console.log('✅ Retrieved FragmentsModel from service');
       console.log('Model type:', model.constructor.name);
-      console.log('Model object:', model.object);
+      console.log('Model has', model.items?.size || 0, 'fragments');
 
-      // DIAGNOSTIC: Detailed model inspection
-      this.inspectModelStructure(model.object);
+      // DEBUG: Check what's in the scene
+      console.log('🔍 Scene state after model load:');
+      console.log('  Scene children count:', this.scene.children.length);
+      
+      // Count different types of objects in scene
+      let meshCount = 0;
+      let lightCount = 0;
+      let helperCount = 0;
+      let otherCount = 0;
+      
+      this.scene.children.forEach((child) => {
+        if (child.type.includes('Light')) lightCount++;
+        else if (child.type.includes('Helper') || child.type.includes('Grid')) helperCount++;
+        else if (child.type.includes('Mesh') || child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) meshCount++;
+        else otherCount++;
+      });
+      
+      console.log(`  Meshes: ${meshCount}, Lights: ${lightCount}, Helpers: ${helperCount}, Other: ${otherCount}`);
 
-      // Add model to scene
-      // In v3.x, FragmentsModel has an 'object' property that is a THREE.Object3D
-      this.scene.add(model.object);
+      // FIX: Ensure all materials in meshes are visible and properly configured
+      this.fixSceneMaterials();
 
-      // FIX: Ensure all materials in the model are visible and properly configured
-      this.fixModelMaterials(model.object);
+      // Center camera on all scene meshes
+      this.centerCameraOnScene();
 
-      // DIAGNOSTIC: Add visual helpers
-      this.addModelHelpers(model.object);
+      // DIAGNOSTIC: Add visual helpers (optional, can be disabled in VIEWER_CONFIG)
+      if (VIEWER_CONFIG.showBoundingBoxHelper || VIEWER_CONFIG.showAxesHelper) {
+        this.addSceneHelpers();
+      }
 
       // Bind camera for culling
       this.fragmentsService.bindCamera(this.camera);
-
-      // Center camera on model
-      this.centerCameraOnModel(model.object);
 
       // Update model state - mark as fully loaded
       this.ngZone.run(() => {
@@ -338,98 +352,18 @@ export class IfcViewerComponent {
   }
 
   /**
-   * DIAGNOSTIC: Inspect the structure of the loaded model
-   */
-  private inspectModelStructure(modelObject: THREE.Object3D): void {
-    console.group('🔍 Model Structure Inspection');
-    
-    console.log('Model Object:', modelObject);
-    console.log('Type:', modelObject.type);
-    console.log('Name:', modelObject.name);
-    console.log('Children count:', modelObject.children.length);
-    console.log('Visible:', modelObject.visible);
-    console.log('Position:', modelObject.position);
-    console.log('Rotation:', modelObject.rotation);
-    console.log('Scale:', modelObject.scale);
-
-    // Count different types of objects
-    let meshCount = 0;
-    let lineCount = 0;
-    let pointCount = 0;
-    let groupCount = 0;
-    let totalVertices = 0;
-    let totalFaces = 0;
-
-    modelObject.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        meshCount++;
-        if (child.geometry) {
-          const posAttr = child.geometry.getAttribute('position');
-          if (posAttr) {
-            totalVertices += posAttr.count;
-          }
-          if (child.geometry.index) {
-            totalFaces += child.geometry.index.count / 3;
-          }
-        }
-        
-        // Log first few meshes with details
-        if (meshCount <= 3) {
-          console.log(`Mesh ${meshCount}:`, {
-            name: child.name,
-            visible: child.visible,
-            geometry: child.geometry,
-            material: child.material,
-            position: child.position,
-            hasGeometry: !!child.geometry,
-            geometryType: child.geometry?.type,
-            vertexCount: child.geometry?.getAttribute('position')?.count || 0,
-          });
-        }
-      } else if (child instanceof THREE.Line) {
-        lineCount++;
-      } else if (child instanceof THREE.Points) {
-        pointCount++;
-      } else if (child instanceof THREE.Group) {
-        groupCount++;
-      }
-    });
-
-    console.log('Statistics:', {
-      meshes: meshCount,
-      lines: lineCount,
-      points: pointCount,
-      groups: groupCount,
-      totalVertices,
-      totalFaces: Math.floor(totalFaces),
-    });
-
-    // Calculate bounding box
-    const bbox = new THREE.Box3().setFromObject(modelObject);
-    const size = bbox.getSize(new THREE.Vector3());
-    const center = bbox.getCenter(new THREE.Vector3());
-    
-    console.log('Bounding Box:', {
-      min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z },
-      max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z },
-      size: { x: size.x, y: size.y, z: size.z },
-      center: { x: center.x, y: center.y, z: center.z },
-    });
-
-    console.groupEnd();
-  }
-
-  /**
    * FIX: Fix material visibility issues
-   * Ensures all materials are properly configured for rendering
+   * Ensures all materials in the scene are properly configured for rendering
    */
-  private fixModelMaterials(modelObject: THREE.Object3D): void {
-    console.group('🔧 Fixing Model Materials');
+  private fixSceneMaterials(): void {
+    console.group('🔧 Fixing Scene Materials');
     
     let materialsFixed = 0;
+    let meshesProcessed = 0;
 
-    modelObject.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
+    this.scene.traverse((child) => {
+      if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
+        meshesProcessed++;
         const materials = Array.isArray(child.material) ? child.material : [child.material];
         
         materials.forEach((material) => {
@@ -470,13 +404,6 @@ export class IfcViewerComponent {
 
             if (!wasVisible || originalSide !== THREE.DoubleSide || hadOpacity === 0) {
               materialsFixed++;
-              console.log('Fixed material:', {
-                type: material.type,
-                wasVisible,
-                originalSide,
-                hadOpacity,
-                newSide: THREE.DoubleSide,
-              });
             }
           }
         });
@@ -487,54 +414,123 @@ export class IfcViewerComponent {
       }
     });
 
-    console.log(`✓ Fixed ${materialsFixed} materials`);
+    console.log(`✓ Processed ${meshesProcessed} meshes, fixed ${materialsFixed} materials`);
     console.groupEnd();
   }
 
   /**
-   * DIAGNOSTIC: Add visual helpers to understand model bounds and orientation
+   * DIAGNOSTIC: Add visual helpers to understand scene bounds and orientation
    */
-  private addModelHelpers(modelObject: THREE.Object3D): void {
-    console.log('Adding visual helpers for model');
+  private addSceneHelpers(): void {
+    console.log('🔧 Adding visual helpers for scene');
 
-    // Add bounding box helper
-    const bbox = new THREE.Box3().setFromObject(modelObject);
-    const boxHelper = new THREE.Box3Helper(bbox, new THREE.Color(0x00ff00));
-    boxHelper.name = 'BoundingBoxHelper';
-    this.scene.add(boxHelper);
+    // Calculate bounding box of all meshes in scene
+    const bbox = new THREE.Box3();
+    let hasMeshes = false;
+    
+    this.scene.traverse((child) => {
+      if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
+        // Skip helpers and grids
+        if (!child.name.includes('Helper') && child.type !== 'GridHelper') {
+          bbox.expandByObject(child);
+          hasMeshes = true;
+        }
+      }
+    });
 
-    // Add axes helper at model center
+    if (!hasMeshes) {
+      console.warn('⚠️ No meshes found in scene to create helpers for');
+      return;
+    }
+
     const center = bbox.getCenter(new THREE.Vector3());
     const size = bbox.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
-    
-    const axesHelper = new THREE.AxesHelper(maxDim * 0.5);
-    axesHelper.position.copy(center);
-    axesHelper.name = 'AxesHelper';
-    this.scene.add(axesHelper);
 
-    console.log('✓ Added bounding box helper (green) and axes helper at model center');
+    console.log('Scene bounding box:', {
+      min: bbox.min,
+      max: bbox.max,
+      center,
+      size,
+      maxDim,
+    });
+
+    const helpers: string[] = [];
+
+    // Add bounding box helper if enabled
+    if (VIEWER_CONFIG.showBoundingBoxHelper) {
+      const boxHelper = new THREE.Box3Helper(bbox, new THREE.Color(0x00ff00));
+      boxHelper.name = 'BoundingBoxHelper';
+      this.scene.add(boxHelper);
+      helpers.push('bounding box (green)');
+    }
+
+    // Add axes helper if enabled
+    if (VIEWER_CONFIG.showAxesHelper) {
+      const axesHelper = new THREE.AxesHelper(maxDim * 0.5);
+      axesHelper.position.copy(center);
+      axesHelper.name = 'AxesHelper';
+      this.scene.add(axesHelper);
+      helpers.push('axes helper');
+    }
+
+    if (helpers.length > 0) {
+      console.log(`✅ Added ${helpers.join(' and ')} at scene center`);
+    }
   }
 
   /**
-   * Center camera on loaded model
+   * Center camera on all meshes in the scene
    */
-  private centerCameraOnModel(model: THREE.Object3D): void {
-    const box = new THREE.Box3().setFromObject(model);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
+  private centerCameraOnScene(): void {
+    console.log('🎥 Centering camera on scene meshes');
+    
+    // Calculate bounding box of all meshes
+    const bbox = new THREE.Box3();
+    let hasMeshes = false;
+    
+    this.scene.traverse((child) => {
+      if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
+        // Skip helpers and grids
+        if (!child.name.includes('Helper') && child.type !== 'GridHelper') {
+          bbox.expandByObject(child);
+          hasMeshes = true;
+        }
+      }
+    });
 
+    if (!hasMeshes) {
+      console.warn('⚠️ No meshes found in scene, using default camera position');
+      return;
+    }
+
+    const center = bbox.getCenter(new THREE.Vector3());
+    const size = bbox.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
+
+    // Calculate camera distance to fit the entire model
     const fov = this.camera.fov * (Math.PI / 180);
     let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
     cameraZ *= 1.5; // Add some padding
 
-    this.camera.position.set(center.x + cameraZ, center.y + cameraZ, center.z + cameraZ);
+    // Position camera at an angle to see the model nicely
+    this.camera.position.set(
+      center.x + cameraZ * 0.7,
+      center.y + cameraZ * 0.7,
+      center.z + cameraZ * 0.7
+    );
+    
     this.controls.target.copy(center);
     this.controls.update();
 
-      // Update culling after camera movement
-      this.fragmentsService.updateCulling().catch(console.error);
+    console.log('✅ Camera centered:', {
+      position: this.camera.position,
+      target: center,
+      distance: this.camera.position.distanceTo(center),
+    });
+
+    // Update culling after camera movement
+    this.fragmentsService.updateCulling().catch(console.error);
   }
 
   /**
@@ -554,7 +550,8 @@ export class IfcViewerComponent {
       }
 
       // Create blob and download
-      const blob = new Blob([buffer], { type: 'application/octet-stream' });
+      const arrayBuffer = new Uint8Array(buffer).buffer as ArrayBuffer;
+      const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

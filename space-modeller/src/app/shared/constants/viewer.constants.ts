@@ -19,6 +19,9 @@ export const VIEWER_CONFIG: ViewerConfig = {
   backgroundColor: '#0e1013',
   showGrid: true,
   showStats: true,
+  // Diagnostic helpers (disable once IFC rendering is confirmed working)
+  showBoundingBoxHelper: true, // Green wireframe box around model
+  showAxesHelper: true,         // RGB axes at model center
 };
 
 /**

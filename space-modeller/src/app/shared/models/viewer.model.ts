@@ -14,6 +14,10 @@ export interface ViewerConfig {
   showGrid: boolean;
   /** Whether to show stats panel */
   showStats: boolean;
+  /** Whether to show bounding box helper (green wireframe) */
+  showBoundingBoxHelper?: boolean;
+  /** Whether to show axes helper (RGB axes) */
+  showAxesHelper?: boolean;
 }
 
 /**
