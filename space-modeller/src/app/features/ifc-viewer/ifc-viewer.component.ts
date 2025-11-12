@@ -415,6 +415,9 @@ export class IfcViewerComponent {
    * Load and process IFC file
    */
   private async loadIfcFile(file: File): Promise<void> {
+    // Remove previous model if one exists
+    await this.clearPreviousModel();
+
     this.isLoading.set(true);
 
     const modelState: IFCModelState = {
@@ -604,6 +607,44 @@ export class IfcViewerComponent {
       axesHelper.name = 'AxesHelper';
       this.scene.add(axesHelper);
       console.log('✓ Added axes helper');
+    }
+  }
+
+  /**
+   * Clear previous model and all helpers from the scene
+   */
+  private async clearPreviousModel(): Promise<void> {
+    const currentModel = this.currentModel();
+    
+    if (currentModel?.fragmentUuid) {
+      console.log('🗑️ Removing previous model from scene...');
+      
+      // Remove the model from the fragments service
+      await this.fragmentsService.removeModel(currentModel.fragmentUuid);
+      
+      // Remove visual helpers (bounding box, axes)
+      this.removeSceneHelpers();
+      
+      console.log('✓ Previous model removed');
+    }
+  }
+
+  /**
+   * Remove visual helpers from the scene
+   */
+  private removeSceneHelpers(): void {
+    // Find and remove bounding box helper
+    const boxHelper = this.scene.getObjectByName('BoundingBoxHelper');
+    if (boxHelper) {
+      this.scene.remove(boxHelper);
+      disposeObject(boxHelper);
+    }
+
+    // Find and remove axes helper
+    const axesHelper = this.scene.getObjectByName('AxesHelper');
+    if (axesHelper) {
+      this.scene.remove(axesHelper);
+      disposeObject(axesHelper);
     }
   }
 

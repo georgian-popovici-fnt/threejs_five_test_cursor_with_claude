@@ -78,7 +78,8 @@
   <!-- Error Message -->
   @if (currentModel()?.error; as error) {
     <div class="error-message" role="alert">
-      <strong>Error:</strong> {{ error }}
+      <strong>Error</strong>
+      {{ error.message }}
     </div>
   }
 </div>
