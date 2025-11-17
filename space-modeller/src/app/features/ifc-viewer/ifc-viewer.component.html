@@ -8,8 +8,10 @@
   ></canvas>
 
   <!-- Orientation Cube -->
-  @if (camera) {
-    <app-orientation-cube [camera]="camera" />
+  @if (camera(); as cam) {
+    @if (controls(); as ctrl) {
+      <app-orientation-cube [camera]="cam" [target]="ctrl.target" />
+    }
   }
 
   <!-- Left Sidebar -->

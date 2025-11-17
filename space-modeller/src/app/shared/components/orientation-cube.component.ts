@@ -9,7 +9,9 @@ import {
   input,
   effect,
   DestroyRef,
+  signal,
 } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import * as THREE from 'three';
 
@@ -42,12 +44,33 @@ import * as THREE from 'three';
 @Component({
   selector: 'app-orientation-cube',
   standalone: true,
+  imports: [CommonModule],
   template: `
-    <canvas 
-      #canvas 
-      class="orientation-cube-canvas"
-      aria-hidden="true"
-    ></canvas>
+    <div class="cube-wrapper">
+      <canvas 
+        #canvas 
+        class="orientation-cube-canvas"
+        aria-hidden="true"
+      ></canvas>
+      <div class="coordinates-panel">
+        <div class="coord-section">
+          <span class="coord-label">Position:</span>
+          <div class="coord-values">
+            <span class="coord-axis">X: {{ formatCoord(cameraPosition().x) }}</span>
+            <span class="coord-axis">Y: {{ formatCoord(cameraPosition().y) }}</span>
+            <span class="coord-axis">Z: {{ formatCoord(cameraPosition().z) }}</span>
+          </div>
+        </div>
+        <div class="coord-section">
+          <span class="coord-label">Target:</span>
+          <div class="coord-values">
+            <span class="coord-axis">X: {{ formatCoord(cameraTarget().x) }}</span>
+            <span class="coord-axis">Y: {{ formatCoord(cameraTarget().y) }}</span>
+            <span class="coord-axis">Z: {{ formatCoord(cameraTarget().z) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   `,
   styles: [`
     :host {
@@ -55,26 +78,80 @@ import * as THREE from 'three';
       position: fixed;
       top: 16px;
       right: 16px;
-      width: 80px;
-      height: 80px;
       pointer-events: none;
       z-index: 1000;
+    }
+
+    .cube-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .orientation-cube-canvas {
+      width: 80px;
+      height: 80px;
+      display: block;
       border-radius: 4px;
-      overflow: hidden;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
       background: rgba(255, 255, 255, 0.95);
     }
 
-    .orientation-cube-canvas {
-      width: 100%;
-      height: 100%;
+    .coordinates-panel {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 4px;
+      padding: 8px 10px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 11px;
+      line-height: 1.4;
+      min-width: 180px;
+    }
+
+    .coord-section {
+      margin-bottom: 6px;
+    }
+
+    .coord-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .coord-label {
+      font-weight: 600;
+      color: #333;
       display: block;
+      margin-bottom: 3px;
+    }
+
+    .coord-values {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .coord-axis {
+      color: #666;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 10px;
     }
 
     @media (prefers-color-scheme: dark) {
-      :host {
+      .orientation-cube-canvas {
         background: rgba(30, 30, 30, 0.95);
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+
+      .coordinates-panel {
+        background: rgba(30, 30, 30, 0.95);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+
+      .coord-label {
+        color: #e0e0e0;
+      }
+
+      .coord-axis {
+        color: #b0b0b0;
       }
     }
   `],
@@ -83,6 +160,7 @@ import * as THREE from 'three';
 export class OrientationCubeComponent {
   // Inputs
   readonly camera = input.required<THREE.Camera>();
+  readonly target = input<THREE.Vector3>();
 
   // Dependencies
   private readonly ngZone = inject(NgZone);
@@ -97,6 +175,10 @@ export class OrientationCubeComponent {
   private cubeCamera!: THREE.PerspectiveCamera;
   private cube!: THREE.Mesh;
   private animationFrameId?: number;
+
+  // Camera tracking signals
+  readonly cameraPosition = signal<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
+  readonly cameraTarget = signal<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
 
   // Face colors (subtle, high contrast)
   private readonly faceColors = {
@@ -263,10 +345,53 @@ export class OrientationCubeComponent {
     const mainCamera = this.camera();
     if (mainCamera) {
       this.updateCubeOrientation(mainCamera);
+      this.updateCameraCoordinates(mainCamera);
     }
 
     // Render the scene
     this.renderer.render(this.scene, this.cubeCamera);
+  }
+
+  /**
+   * Update camera coordinates for display
+   */
+  private updateCameraCoordinates(mainCamera: THREE.Camera): void {
+    this.ngZone.run(() => {
+      // Update position
+      this.cameraPosition.set({
+        x: mainCamera.position.x,
+        y: mainCamera.position.y,
+        z: mainCamera.position.z,
+      });
+
+      // Use provided target if available, otherwise calculate from camera direction
+      const targetVector = this.target();
+      if (targetVector) {
+        this.cameraTarget.set({
+          x: targetVector.x,
+          y: targetVector.y,
+          z: targetVector.z,
+        });
+      } else {
+        // Calculate target from camera direction
+        const direction = new THREE.Vector3();
+        mainCamera.getWorldDirection(direction);
+        const calculatedTarget = mainCamera.position.clone().add(direction.multiplyScalar(10));
+        
+        this.cameraTarget.set({
+          x: calculatedTarget.x,
+          y: calculatedTarget.y,
+          z: calculatedTarget.z,
+        });
+      }
+    });
+  }
+
+  /**
+   * Format coordinate value for display
+   */
+  formatCoord(value: number): string {
+    return value.toFixed(2);
   }
 
   /**

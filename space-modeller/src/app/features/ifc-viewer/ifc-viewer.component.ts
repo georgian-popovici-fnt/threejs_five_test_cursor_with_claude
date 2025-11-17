@@ -91,16 +91,18 @@ export class IfcViewerComponent {
   // Three.js Objects
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
-  camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera; // Public for orientation cube
   private perspectiveCamera!: THREE.PerspectiveCamera;
   private orthographicCamera!: THREE.OrthographicCamera;
-  private controls!: OrbitControls;
+  private _camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  private _controls!: OrbitControls;
   private gridHelper?: THREE.GridHelper;
   private stats?: Stats;
   private animationFrameId?: number;
   private resizeObserver?: ResizeObserver;
 
   // State Management (Signals)
+  readonly camera = signal<THREE.PerspectiveCamera | THREE.OrthographicCamera | null>(null); // For orientation cube
+  readonly controls = signal<OrbitControls | null>(null); // For orientation cube
   readonly currentModel = signal<IFCModelState | null>(null);
   readonly isLoading = signal<boolean>(false);
   readonly errorMessage = signal<string | null>(null);
@@ -180,11 +182,11 @@ export class IfcViewerComponent {
       this.setupResizeObserver(canvas);
 
       // Initialize FragmentsService
-      await this.fragmentsService.initialize(this.scene, this.camera);
+      await this.fragmentsService.initialize(this.scene, this._camera);
 
       // Initial render
       this.updateSize();
-      this.renderer.render(this.scene, this.camera);
+      this.renderer.render(this.scene, this._camera);
 
       // Start animation loop
       this.ngZone.runOutsideAngular(() => this.animate());
@@ -270,7 +272,8 @@ export class IfcViewerComponent {
     );
 
     // Set active camera based on initial state
-    this.camera = this.cameraType() === 'perspective' ? this.perspectiveCamera : this.orthographicCamera;
+    this._camera = this.cameraType() === 'perspective' ? this.perspectiveCamera : this.orthographicCamera;
+    this.camera.set(this._camera);
 
     console.log('✓ Cameras initialized');
   }
@@ -281,36 +284,39 @@ export class IfcViewerComponent {
   private initializeControls(canvas: HTMLCanvasElement): void {
     const config = this.configService.config;
     
-    this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.target.set(
+    this._controls = new OrbitControls(this._camera, canvas);
+    this._controls.target.set(
       config.cameraTarget.x,
       config.cameraTarget.y,
       config.cameraTarget.z
     );
     
     // Apply enhanced control settings
-    this.controls.enableDamping = CONTROLS_CONFIG.enableDamping;
-    this.controls.dampingFactor = CONTROLS_CONFIG.dampingFactor;
-    this.controls.minDistance = CONTROLS_CONFIG.minDistance;
-    this.controls.maxDistance = CONTROLS_CONFIG.maxDistance;
-    this.controls.maxPolarAngle = CONTROLS_CONFIG.maxPolarAngle;
-    this.controls.minPolarAngle = CONTROLS_CONFIG.minPolarAngle;
-    this.controls.enablePan = CONTROLS_CONFIG.enablePan;
-    this.controls.enableZoom = CONTROLS_CONFIG.enableZoom;
-    this.controls.enableRotate = CONTROLS_CONFIG.enableRotate;
-    this.controls.zoomSpeed = CONTROLS_CONFIG.zoomSpeed;
-    this.controls.rotateSpeed = CONTROLS_CONFIG.rotateSpeed;
-    this.controls.panSpeed = CONTROLS_CONFIG.panSpeed;
-    this.controls.screenSpacePanning = CONTROLS_CONFIG.screenSpacePanning;
-    this.controls.update();
+    this._controls.enableDamping = CONTROLS_CONFIG.enableDamping;
+    this._controls.dampingFactor = CONTROLS_CONFIG.dampingFactor;
+    this._controls.minDistance = CONTROLS_CONFIG.minDistance;
+    this._controls.maxDistance = CONTROLS_CONFIG.maxDistance;
+    this._controls.maxPolarAngle = CONTROLS_CONFIG.maxPolarAngle;
+    this._controls.minPolarAngle = CONTROLS_CONFIG.minPolarAngle;
+    this._controls.enablePan = CONTROLS_CONFIG.enablePan;
+    this._controls.enableZoom = CONTROLS_CONFIG.enableZoom;
+    this._controls.enableRotate = CONTROLS_CONFIG.enableRotate;
+    this._controls.zoomSpeed = CONTROLS_CONFIG.zoomSpeed;
+    this._controls.rotateSpeed = CONTROLS_CONFIG.rotateSpeed;
+    this._controls.panSpeed = CONTROLS_CONFIG.panSpeed;
+    this._controls.screenSpacePanning = CONTROLS_CONFIG.screenSpacePanning;
+    this._controls.update();
 
     // Add camera rest event for culling updates
-    this.controls.addEventListener('end', () => {
+    this._controls.addEventListener('end', () => {
       this.fragmentsService.updateCulling().catch(console.error);
     });
 
     // Setup enhanced cursor feedback
     this.setupCursorFeedback(canvas);
+
+    // Set controls signal
+    this.controls.set(this._controls);
 
     console.log('✓ Enhanced controls initialized');
   }
@@ -499,8 +505,8 @@ export class IfcViewerComponent {
     this.animationFrameId = requestAnimationFrame(() => this.animate());
 
     this.stats?.begin();
-    this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    this._controls.update();
+    this.renderer.render(this.scene, this._camera);
     this.stats?.end();
   }
 
@@ -607,7 +613,7 @@ export class IfcViewerComponent {
       }
 
       // Bind camera for culling
-      this.fragmentsService.bindCamera(this.camera);
+      this.fragmentsService.bindCamera(this._camera);
 
       // Get model statistics
       const stats = this.fragmentsService.getModelStatistics(uuid);
@@ -702,10 +708,10 @@ export class IfcViewerComponent {
     // Update both cameras
     this.perspectiveCamera.position.copy(cameraPos.position);
     this.orthographicCamera.position.copy(cameraPos.position);
-    this.camera.position.copy(cameraPos.position);
+    this._camera.position.copy(cameraPos.position);
     
-    this.controls.target.copy(cameraPos.target);
-    this.controls.update();
+    this._controls.target.copy(cameraPos.target);
+    this._controls.update();
 
     // Adjust orthographic zoom if it's the active camera
     if (this.cameraType() === 'orthographic') {
@@ -872,27 +878,28 @@ export class IfcViewerComponent {
     console.log(`🎥 Switching to ${newType} camera`);
 
     // Store current camera position and target
-    const currentPosition = this.camera.position.clone();
-    const currentTarget = this.controls.target.clone();
+    const currentPosition = this._camera.position.clone();
+    const currentTarget = this._controls.target.clone();
 
     // Switch active camera
-    this.camera = newType === 'perspective' ? this.perspectiveCamera : this.orthographicCamera;
+    this._camera = newType === 'perspective' ? this.perspectiveCamera : this.orthographicCamera;
+    this.camera.set(this._camera);
 
     // Copy position and look target to new camera
-    this.camera.position.copy(currentPosition);
-    this.camera.lookAt(currentTarget);
-    this.camera.updateProjectionMatrix();
+    this._camera.position.copy(currentPosition);
+    this._camera.lookAt(currentTarget);
+    this._camera.updateProjectionMatrix();
 
     // Update controls to use new camera
-    this.controls.object = this.camera as any;
-    this.controls.target.copy(currentTarget);
-    this.controls.update();
+    this._controls.object = this._camera as any;
+    this._controls.target.copy(currentTarget);
+    this._controls.update();
 
     // Update camera type signal
     this.cameraType.set(newType);
 
     // Update fragments service camera binding
-    this.fragmentsService.bindCamera(this.camera);
+    this.fragmentsService.bindCamera(this._camera);
 
     // Adjust orthographic camera zoom to match perspective view
     if (newType === 'orthographic') {
@@ -907,7 +914,7 @@ export class IfcViewerComponent {
    */
   private adjustOrthographicZoom(): void {
     // Calculate appropriate zoom based on distance from target
-    const distance = this.camera.position.distanceTo(this.controls.target);
+    const distance = this._camera.position.distanceTo(this._controls.target);
     const frustumSize = distance * 0.5;
     
     const canvas = this.canvasRef().nativeElement;
@@ -938,8 +945,8 @@ export class IfcViewerComponent {
       }
 
       // Dispose controls
-      if (this.controls) {
-        this.controls.dispose();
+      if (this._controls) {
+        this._controls.dispose();
       }
 
       // Dispose resize observer
