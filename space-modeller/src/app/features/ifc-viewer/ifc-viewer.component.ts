@@ -18,6 +18,7 @@ import Stats from 'stats.js';
 
 // Components
 import { IfcClassFilterComponent } from './components/ifc-class-filter.component';
+import { OrientationCubeComponent } from '../../shared/components/orientation-cube.component';
 
 // Services
 import { FragmentsService } from '../../core/services/fragments.service';
@@ -69,7 +70,7 @@ import { validateIfcFile, sanitizeFileName } from '../../shared/utils/validation
 @Component({
   selector: 'app-ifc-viewer',
   standalone: true,
-  imports: [CommonModule, IfcClassFilterComponent],
+  imports: [CommonModule, IfcClassFilterComponent, OrientationCubeComponent],
   templateUrl: './ifc-viewer.component.html',
   styleUrls: ['./ifc-viewer.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -90,7 +91,7 @@ export class IfcViewerComponent {
   // Three.js Objects
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
-  private camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera; // Public for orientation cube
   private perspectiveCamera!: THREE.PerspectiveCamera;
   private orthographicCamera!: THREE.OrthographicCamera;
   private controls!: OrbitControls;

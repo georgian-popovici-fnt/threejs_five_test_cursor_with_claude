@@ -7,6 +7,11 @@
     aria-label="3D viewport for IFC model visualization"
   ></canvas>
 
+  <!-- Orientation Cube -->
+  @if (camera) {
+    <app-orientation-cube [camera]="camera" />
+  }
+
   <!-- Left Sidebar -->
   <aside 
     class="sidebar" 
