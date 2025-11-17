@@ -89,8 +89,8 @@ import * as THREE from 'three';
     }
 
     .orientation-cube-canvas {
-      width: 80px;
-      height: 80px;
+      width: 120px;
+      height: 120px;
       display: block;
       border-radius: 4px;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -212,7 +212,7 @@ export class OrientationCubeComponent {
    */
   private initializeCube(): void {
     const canvas = this.canvasRef().nativeElement;
-    const size = 80;
+    const size = 120;
     const dpr = Math.min(window.devicePixelRatio, 2);
 
     // Setup renderer
