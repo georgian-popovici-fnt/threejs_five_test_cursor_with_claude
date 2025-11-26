@@ -94,10 +94,12 @@ export class IfcFilterService {
               const info = classMap.get(ifcClass)!;
               info.count++;
             } else {
+              // IfcSpace elements are hidden by default, all others visible
+              const isVisible = ifcClass !== 'IfcSpace';
               classMap.set(ifcClass, {
                 name: ifcClass,
                 count: 1,
-                visible: true, // Default to visible
+                visible: isVisible,
                 color: this.getClassColor(ifcClass),
               });
             }
@@ -112,6 +114,14 @@ export class IfcFilterService {
       console.log(`✅ Found ${classes.length} unique IFC classes:`, 
         classes.map(c => `${c.name} (${c.count})`).join(', ')
       );
+
+      // Apply initial visibility state (hide IfcSpace elements by default)
+      classes.forEach(classInfo => {
+        if (!classInfo.visible) {
+          this.applyClassVisibility(classInfo.name, false);
+          console.log(`👁️ Hiding ${classInfo.name} by default`);
+        }
+      });
 
       return classes;
     } catch (error) {

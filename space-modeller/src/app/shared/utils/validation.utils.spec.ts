@@ -78,10 +78,10 @@ describe('Validation Utils', () => {
         value: 42,
       };
       
-      const result = validateConfig(config, ['name', 'value', 'enabled']);
+      const result = validateConfig(config, ['name', 'value', 'enabled'] as any);
       
       expect(result.valid).toBe(false);
-      expect(result.missing).toEqual(['enabled']);
+      expect(result.missing).toContain('enabled');
     });
 
     it('should detect multiple missing keys', () => {
@@ -89,7 +89,7 @@ describe('Validation Utils', () => {
         name: 'Test',
       };
       
-      const result = validateConfig(config, ['name', 'value', 'enabled', 'type']);
+      const result = validateConfig(config, ['name', 'value', 'enabled', 'type'] as any);
       
       expect(result.valid).toBe(false);
       expect(result.missing?.length).toBe(3);

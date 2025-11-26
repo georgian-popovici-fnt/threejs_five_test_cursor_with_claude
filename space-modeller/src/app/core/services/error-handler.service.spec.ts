@@ -21,8 +21,8 @@ describe('ErrorHandlerService', () => {
       
       service.errors.subscribe((errors) => {
         if (errors.length > 0) {
-          expect(errors[0].message).toBe('Test error');
-          expect(errors[0].severity).toBe(ErrorSeverity.ERROR);
+          expect(errors[0]!.message).toBe('Test error');
+          expect(errors[0]!.severity).toBe(ErrorSeverity.ERROR);
           done();
         }
       });
@@ -35,7 +35,7 @@ describe('ErrorHandlerService', () => {
       
       service.errors.subscribe((errors) => {
         if (errors.length > 0) {
-          expect(errors[0].message).toBe(errorMessage);
+          expect(errors[0]!.message).toBe(errorMessage);
           done();
         }
       });
@@ -48,7 +48,7 @@ describe('ErrorHandlerService', () => {
       
       service.errors.subscribe((errors) => {
         if (errors.length > 0) {
-          expect(errors[0].message).toBe('An unknown error occurred');
+          expect(errors[0]!.message).toBe('An unknown error occurred');
           done();
         }
       });
@@ -61,7 +61,7 @@ describe('ErrorHandlerService', () => {
       
       service.errors.subscribe((errors) => {
         if (errors.length > 0) {
-          expect(errors[0].context).toEqual(context);
+          expect(errors[0]!.context).toEqual(context);
           done();
         }
       });
@@ -74,7 +74,7 @@ describe('ErrorHandlerService', () => {
       service.handleError('Error 2');
       
       const errors = service['errors$'].value;
-      expect(errors[0].id).not.toBe(errors[1].id);
+      expect(errors[0]!.id).not.toBe(errors[1]!.id);
     });
 
     it('should include timestamp', () => {
@@ -117,9 +117,9 @@ describe('ErrorHandlerService', () => {
       service.handleError('Third');
       
       const errors = service['errors$'].value;
-      expect(errors[0].message).toBe('Third');
-      expect(errors[1].message).toBe('Second');
-      expect(errors[2].message).toBe('First');
+      expect(errors[0]!.message).toBe('Third');
+      expect(errors[1]!.message).toBe('Second');
+      expect(errors[2]!.message).toBe('First');
     });
   });
 
@@ -154,13 +154,13 @@ describe('ErrorHandlerService', () => {
       service.handleError('Error 2');
       
       const errors = service['errors$'].value;
-      const idToRemove = errors[0].id;
+      const idToRemove = errors[0]!.id;
       
       service.clearError(idToRemove);
       
       const remainingErrors = service['errors$'].value;
       expect(remainingErrors.length).toBe(1);
-      expect(remainingErrors[0].id).not.toBe(idToRemove);
+      expect(remainingErrors[0]!.id).not.toBe(idToRemove);
     });
   });
 
@@ -176,7 +176,7 @@ describe('ErrorHandlerService', () => {
     it('should filter errors by INFO severity', () => {
       const infoErrors = service.getErrorsBySeverity(ErrorSeverity.INFO);
       expect(infoErrors.length).toBe(1);
-      expect(infoErrors[0].message).toBe('Info error');
+      expect(infoErrors[0]!.message).toBe('Info error');
     });
 
     it('should filter errors by WARNING severity', () => {
